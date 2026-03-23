@@ -1,0 +1,9 @@
+easy_env/
+.env
+.claude
+__pycache__
+*.mp4
+*.log
+*.png
+*.txt
+*.jpg
