@@ -3,7 +3,7 @@
 # Includes cuDNN, NCCL, and NVIDIA drivers — no manual driver install needed.
 # Compatible with the NVIDIA L4 GPU available on Cloud Run Jobs.
 # ─────────────────────────────────────────────────────────────────────────────
-FROM us-docker.pkg.dev/deeplearning-platform-release/gcr.io/base-cu121
+FROM us-docker.pkg.dev/deeplearning-platform-release/gcr.io/base-cu118
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

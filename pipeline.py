@@ -47,6 +47,7 @@ RECENT_CACHE_SIZE     = 20         # Deduplicate across this many consecutive fr
 CHECKPOINT_FILE       = "results.json"
 DOWNLOAD_DIR          = Path("downloads")
 MAX_DL_WORKERS        = 4          # Parallel download threads
+COOKIES_FILE          = Path("cookies.txt")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ def get_video_urls(url: str, processed_ids: set) -> List[Dict]:
         "quiet": True,
         "extract_flat": True,
         "ignoreerrors": True,
+        "cookiefile": str(COOKIES_FILE) if COOKIES_FILE.exists() else None,
     }
     videos = []
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -140,6 +142,7 @@ def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
         "merge_output_format": "mp4",
         "quiet": True,
         "ignoreerrors": False,
+        "cookiefile": str(COOKIES_FILE) if COOKIES_FILE.exists() else None,
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
     }
 

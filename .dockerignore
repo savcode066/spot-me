@@ -35,3 +35,7 @@ crash.log
 # Local dev
 .env
 *.local
+
+# Cookies — never bake credentials into the image
+cookies.json
+cookies.txt

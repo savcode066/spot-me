@@ -107,6 +107,39 @@ Results are written to `results.json` (or `--checkpoint` path) after every video
 
 Text is normalized to lowercase alphanumeric (`DragonSlayer!` → `dragonslayer`) for consistent keying.
 
+## Cookies
+
+yt-dlp needs your YouTube cookies to access age-restricted or account-specific content.
+
+**Local dev** — generate `cookies.txt` from your browser export:
+```bash
+python convert_cookies.py   # converts cookies.json → cookies.txt
+```
+`cookies.txt` is in `.gitignore` and `.dockerignore` so it never gets committed or baked into an image.
+
+**Cloud Run Jobs** — `cookies.txt` can't go in git, so the secret is stored in GCP Secret Manager and fetched at runtime via the `COOKIES_SECRET` environment variable. The pipeline resolves cookies in this order:
+1. `COOKIES_SECRET` env var → fetches from Secret Manager (used on Cloud Run)
+2. Local `cookies.txt` file → used directly (local dev)
+3. Neither → proceeds without cookies (public videos only)
+
+**One-time Secret Manager setup:**
+```bash
+# Upload your cookies.txt as a secret
+gcloud secrets create yt-cookies --data-file=cookies.txt
+
+# Grant the Cloud Run Jobs service account access
+gcloud secrets add-iam-policy-binding yt-cookies \
+  --member="serviceAccount:YOUR_SA@YOUR_PROJECT.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+**To rotate cookies later** (no rebuild needed):
+```bash
+gcloud secrets versions add yt-cookies --data-file=cookies.txt
+```
+
+---
+
 ## Docker / Cloud Run Jobs
 
 The Dockerfile targets Google Cloud Run Jobs with an NVIDIA L4 GPU.
@@ -125,7 +158,7 @@ gcloud run jobs create spot-me \
   --image gcr.io/YOUR_PROJECT/spot-me \
   --region us-central1 \
   --task-timeout 3600 \
-  --set-env-vars BUCKET_NAME=your-gcs-bucket \
+  --set-env-vars BUCKET_NAME=your-gcs-bucket,COOKIES_SECRET=projects/YOUR_PROJECT/secrets/yt-cookies/versions/latest \
   --args="https://www.youtube.com/@SomeGamer/videos","--sample-sec","5"
 
 gcloud run jobs execute spot-me
