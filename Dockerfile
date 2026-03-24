@@ -15,7 +15,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # System dependencies
 #   libglib2.0-0, libgl1  → required by OpenCV even in headless mode
 #   ffmpeg                → used by yt-dlp to merge video+audio streams
-#   nodejs                → JS runtime for yt-dlp n-challenge solving
+#   nodejs 20             → JS runtime for yt-dlp n-challenge solving
+#                           (Ubuntu 22.04 apt ships v12 which is too old)
 # ─────────────────────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
@@ -23,35 +24,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     ffmpeg \
-    nodejs \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Python dependencies
+# Python dependencies (single pip call, no requirements.txt)
 #
-# 1) Pin numpy + PyTorch + torchvision together in a single pip call so the
-#    solver picks compatible versions from the start. numpy<2 is required
-#    because torch 2.1.2 was compiled against numpy 1.x.
-#
-# 2) Then install the rest. grep excludes opencv-python (replaced by headless)
-#    and numpy (already pinned above) from requirements.txt.
+# - numpy<2 pinned because torch 2.1.2 was compiled against numpy 1.x
+# - torch/torchvision pulled from the PyTorch CUDA 11.8 wheel index
+# - opencv-python-headless instead of opencv-python (no GUI needed)
 # ─────────────────────────────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \
         "numpy<2.0.0" \
         torch==2.1.2+cu118 \
         torchvision==0.16.2+cu118 \
-        --index-url https://download.pytorch.org/whl/cu118 \
-        --extra-index-url https://pypi.org/simple
-
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir \
-        $(grep -E -v "^opencv-python|^numpy" requirements.txt | tr '\n' ' ') \
         opencv-python-headless \
+        easyocr \
+        yt-dlp \
+        fuzzywuzzy \
+        ffmpeg-python \
+        Pillow \
         google-cloud-storage \
-        google-cloud-secret-manager
+        google-cloud-secret-manager \
+        --extra-index-url https://download.pytorch.org/whl/cu118
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pre-download EasyOCR English model weights into the image at build time.
