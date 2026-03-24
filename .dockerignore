@@ -1,0 +1,37 @@
+# Virtual environments
+easy_env/
+.venv/
+venv/
+env/
+
+# Downloaded videos and pipeline output
+downloads/
+*.mp4
+*.avi
+*.mkv
+*.webm
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Test/debug images
+*.png
+*.jpg
+*.jpeg
+
+# Pipeline output and logs
+results.json
+crash.log
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Local dev
+.env
+*.local
