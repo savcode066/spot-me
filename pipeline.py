@@ -89,6 +89,10 @@ def get_video_urls(url: str, processed_ids: set) -> List[Dict]:
         "extract_flat": True,
         "ignoreerrors": True,
         "cookiefile": str(COOKIES_FILE) if using_cookies else None,
+        # Use the Android player client to bypass YouTube's JS n-challenge.
+        # Without a JS runtime (Node/Deno), the web client fails to solve it
+        # and YouTube withholds all video formats, causing extract_info to
+        # return nothing. The Android client doesn't require JS challenge solving.
     }
     videos = []
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -284,6 +288,124 @@ def is_valid(raw_text: str, confidence: float) -> bool:
     return confidence >= OCR_CONF_MIN and len(raw_text) >= OCR_TEXT_MIN_LEN
 
 
+# Valorant UI strings that are exact-match rejections only (never substring).
+VALORANT_UI_EXACT = {
+    # HUD / scoreboard
+    "ally", "enemy", "spike", "defused", "planting", "planted",
+    "eliminated", "killed", "assists", "deaths", "score",
+    "round", "rounds", "won", "lost", "victory", "defeat",
+    "attackers", "defenders", "attack", "defense",
+    # buy phase
+    "buy", "save", "bonus", "eco", "pistol", "shield", "credits",
+    "light", "heavy", "full",
+    # agents
+    "jett", "reyna", "sage", "omen", "brimstone", "phoenix",
+    "sova", "cypher", "killjoy", "breach", "raze", "viper",
+    "astra", "yoru", "skye", "kayo", "chamber", "neon",
+    "fade", "harbor", "gekko", "deadlock", "iso", "clove", "vyse", "tejo", "waylay",
+    # abilities (common OCR hits)
+    "dismiss", "devour", "updraft", "tailwind", "cloudburst",
+    "paranoia", "resurrection", "healing", "blind", "flash",
+    "smoke", "wall", "ultimate", "ability",
+    # UI chrome
+    "settings", "play", "collection", "battlepass", "store",
+    "career", "agents", "maps", "competitive", "unrated",
+    "deathmatch", "escalation", "replication", "swiftplay",
+    "premier", "custom", "practice",
+    # map names
+    "bind", "haven", "split", "ascent", "icebox", "breeze",
+    "fracture", "pearl", "lotus", "sunset", "abyss",
+    # misc UI
+    "valorant", "riot", "games", "guides", "subscribe",
+    "like", "comment", "share", "youtube", "twitch",
+    "stream", "live", "chat", "follow", "channel",
+    "video", "watch", "clip", "highlight", "montage",
+    "best", "moments", "gameplay", "ranked", "immortal",
+    "radiant", "diamond", "platinum", "gold", "silver",
+    "bronze", "iron", "ascendant",
+}
+
+VALORANT_UI_COMPOUND = {
+    # HUD phrases OCR'd as one word
+    "allyplanting", "allyeliminated", "allydefusing",
+    "enemyplanting", "enemyeliminated", "enemydefusing",
+    "spikeplanted", "spikedefused", "spikerush",
+    "roundwon", "roundlost", "roundwin", "roundloss",
+    "matchpoint", "matchmvp", "teammvp",
+    "flawlessvictory", "thriftywin", "acewin",
+    "clutchwin", "overtimewin",
+    # YouTube / overlay text
+    "valorantguides", "valorantgameplay", "valorantranked",
+    "valoranthighlights", "valorantmoments", "valorantclips",
+    "trackyourhs", "trackyourstats",
+    "likeandsubscribe", "subscribeformore", "hitthebell",
+    "leaveacomment", "linkinbio", "inlink", "linkbelow",
+    "joinmydiscord", "followmytwitch", "checkouttiktok",
+    # Misc UI / overlay
+    "soundtrack", "musicby", "editedby", "recordedby",
+    "fullvideo", "watchmore", "nextgame", "lastgame",
+    "headshot", "bodyshot", "firstblood", "onetap",
+    "ready", "notready", "gameready",
+}
+# Short common English words that are unlikely to be usernames.
+COMMON_SHORT = {
+    "the", "and", "for", "are", "but", "not", "you", "all",
+    "can", "her", "was", "one", "our", "out", "has", "have",
+    "this", "that", "with", "from", "they", "been", "will",
+    "more", "when", "some", "them", "than", "its", "over",
+    "just", "also", "into", "back", "only", "come", "made",
+    "after", "most", "game", "team", "time", "next", "last",
+    "new", "now", "way", "may", "day", "too", "any", "good",
+    "how", "man", "did", "get", "got", "let", "say", "top",
+    "off", "end", "set", "try", "big", "use", "put", "old",
+    "run", "win", "hit", "low", "cut", "hot", "red", "yes",
+    "yet", "ago", "far", "few", "per",
+}
+
+# Riot username length bounds (after stripping the #tag).
+_USERNAME_MIN = 3
+_USERNAME_MAX = 16
+
+# Strip optional #tag suffix before length check.
+_TAG_RE = re.compile(r"#[a-z0-9]+$")
+
+
+def looks_like_username(raw_text: str, norm_text: str) -> bool:
+    """
+    Return True if the OCR detection is plausibly a Riot/Valorant username.
+
+    Checks (applied in order):
+      1. Length — Riot names are 3-16 chars (after stripping #tag).
+      2. Pattern — must contain at least one letter; reject purely numeric.
+      3. Exact UI word — reject if norm_text is a known Valorant UI string.
+      4. Short common word — reject if <= 4 chars and a common English word.
+    """
+    # Strip #tag from the raw text before length check.
+    base = _TAG_RE.sub("", norm_text)
+
+    # 1. Length filter
+    if not (_USERNAME_MIN <= len(base) <= _USERNAME_MAX):
+        log.debug("  [SKIP username] length out of range: '%s'", raw_text)
+        return False
+
+    # 2. Pattern filter — must have at least one letter; reject all-numeric
+    if not any(c.isalpha() for c in base):
+        log.debug("  [SKIP username] no letters: '%s'", raw_text)
+        return False
+
+    # 3. Exact Valorant UI word/phrase rejection
+    if base in VALORANT_UI_EXACT or base in VALORANT_UI_COMPOUND:
+        log.debug("  [SKIP username] UI word match: '%s'", raw_text)
+        return False
+
+    # 4. Short common English word rejection
+    if len(base) <= 4 and base in COMMON_SHORT:
+        log.debug("  [SKIP username] common short word: '%s'", raw_text)
+        return False
+
+    return True
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 5.  Per-Video Processing
 # ─────────────────────────────────────────────────────────────────────────────
@@ -320,6 +442,9 @@ def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
             norm = normalize(raw_text)
             if len(norm) < OCR_TEXT_MIN_LEN:
                 continue   # Normalized form too short (was mostly punctuation)
+
+            if not looks_like_username(raw_text, norm):
+                continue
 
             # ── Deduplicate within nearby-frame window ────────────────────
             if norm in recent_cache:
