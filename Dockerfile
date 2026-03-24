@@ -44,7 +44,9 @@ RUN pip install --no-cache-dir \
         opencv-python-headless \
         easyocr \
         yt-dlp \
-        google-cloud-storage
+        google-cloud-storage \
+        google-cloud-secret-manager
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Pre-download EasyOCR English model weights into the image at build time.

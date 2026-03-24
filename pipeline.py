@@ -81,12 +81,14 @@ def get_video_urls(url: str, processed_ids: set) -> List[Dict]:
     extract_flat=True fetches only metadata for playlist/channel entries
     so we don't trigger unnecessary downloads.
     """
+    using_cookies = COOKIES_FILE.exists()
     log.info(f"Fetching video list from: {url}")
+    log.info(f"yt-dlp cookies: {COOKIES_FILE} ({'found' if using_cookies else 'NOT FOUND — skipping'})")
     ydl_opts = {
         "quiet": True,
         "extract_flat": True,
         "ignoreerrors": True,
-        "cookiefile": str(COOKIES_FILE) if COOKIES_FILE.exists() else None,
+        "cookiefile": str(COOKIES_FILE) if using_cookies else None,
     }
     videos = []
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -131,8 +133,8 @@ def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(output_dir / f"{video['id']}.%(ext)s")
 
+    using_cookies = COOKIES_FILE.exists()
     ydl_opts = {
-        # Prefer native 720p mp4; fall back to best ≤720p with merge
         "format": (
             "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]"
             "/bestvideo[height<=720]+bestaudio"
@@ -142,12 +144,13 @@ def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
         "merge_output_format": "mp4",
         "quiet": True,
         "ignoreerrors": False,
-        "cookiefile": str(COOKIES_FILE) if COOKIES_FILE.exists() else None,
+        "cookiefile": str(COOKIES_FILE) if using_cookies else None,
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
     }
 
     try:
         log.info(f"[{video['id']}] Downloading: {video['title']}")
+        log.info(f"[{video['id']}] yt-dlp cookies: {COOKIES_FILE} ({'found' if using_cookies else 'NOT FOUND — skipping'})")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video["url"]])
 

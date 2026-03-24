@@ -8,7 +8,6 @@ Usage (local):
 Usage (Cloud Run Job):
     Set COOKIES_SECRET env var to your Secret Manager resource name:
       projects/YOUR_PROJECT/secrets/yt-cookies/versions/latest
-    The secret payload must be the contents of a valid cookies.txt file.
 """
 
 import argparse
@@ -22,25 +21,26 @@ log = logging.getLogger(__name__)
 
 
 def fetch_cookies_from_secret_manager(secret_resource_name: str) -> Path:
-    """
-    Pull cookies.txt content from GCP Secret Manager and write it to
-    /tmp/cookies.txt so yt-dlp can use it.
-
-    The secret value should be the full text of a Netscape-format cookies.txt.
-    To create it:
-        gcloud secrets create yt-cookies --data-file=cookies.txt
-    To update it later:
-        gcloud secrets versions add yt-cookies --data-file=cookies.txt
-    """
-    from google.cloud import secretmanager  # only imported when needed
+    from google.cloud import secretmanager
 
     log.info(f"Fetching cookies from Secret Manager: {secret_resource_name}")
     client = secretmanager.SecretManagerServiceClient()
-    response = client.access_secret_version(request={"name": secret_resource_name})
+
+    try:
+        response = client.access_secret_version(request={"name": secret_resource_name})
+    except Exception as exc:
+        log.error(f"Secret Manager request failed: {exc}")
+        raise
+
+    payload_size = len(response.payload.data)
+    log.info(f"Secret retrieved successfully ({payload_size} bytes)")
 
     cookies_path = Path("/tmp/cookies.txt")
     cookies_path.write_bytes(response.payload.data)
-    log.info(f"Cookies written to {cookies_path}")
+
+    line_count = cookies_path.read_text().count("\n")
+    log.info(f"cookies.txt written to {cookies_path} ({line_count} lines)")
+
     return cookies_path
 
 
@@ -80,10 +80,6 @@ def main() -> None:
     pipeline.FRAME_SAMPLE_SEC = args.sample_sec
     pipeline.CHECKPOINT_FILE  = args.checkpoint
 
-    # ── Cookies resolution (priority order) ───────────────────────────────
-    # 1. COOKIES_SECRET env var → fetch from Secret Manager (Cloud Run)
-    # 2. Local cookies.txt file → use directly (local dev)
-    # 3. Neither → proceed without cookies (public videos only)
     secret = os.environ.get("COOKIES_SECRET")
     if secret:
         pipeline.COOKIES_FILE = fetch_cookies_from_secret_manager(secret)
