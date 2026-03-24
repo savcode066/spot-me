@@ -6,8 +6,8 @@ Usage (local):
     python main.py https://www.youtube.com/@SomeGamer/videos --sample-sec 5
 
 Usage (Cloud Run Job):
-    Set COOKIES_SECRET env var to your Secret Manager resource name:
-      projects/YOUR_PROJECT/secrets/yt-cookies/versions/latest
+    Cloud Run injects the secret contents directly into COOKIES_SECRET.
+    If COOKIES_SECRET holds a resource path instead, it falls back to the API.
 """
 
 import argparse
@@ -20,27 +20,36 @@ import pipeline
 log = logging.getLogger(__name__)
 
 
-def fetch_cookies_from_secret_manager(secret_resource_name: str) -> Path:
-    from google.cloud import secretmanager
+def resolve_cookies(secret_value: str) -> Path:
+    """
+    Cloud Run can inject a secret in two ways:
 
-    log.info(f"Fetching cookies from Secret Manager: {secret_resource_name}")
-    client = secretmanager.SecretManagerServiceClient()
+    1. As the raw secret contents (mounted as env var) — COOKIES_SECRET will
+       contain the actual cookies.txt text, starting with '# Netscape'.
+       Write it straight to /tmp/cookies.txt.
 
-    try:
-        response = client.access_secret_version(request={"name": secret_resource_name})
-    except Exception as exc:
-        log.error(f"Secret Manager request failed: {exc}")
-        raise
-
-    payload_size = len(response.payload.data)
-    log.info(f"Secret retrieved successfully ({payload_size} bytes)")
-
+    2. As a resource name (projects/.../secrets/.../versions/...) — fetch the
+       contents via the Secret Manager API, then write to /tmp/cookies.txt.
+    """
     cookies_path = Path("/tmp/cookies.txt")
-    cookies_path.write_bytes(response.payload.data)
 
-    line_count = cookies_path.read_text().count("\n")
-    log.info(f"cookies.txt written to {cookies_path} ({line_count} lines)")
+    if secret_value.startswith("# Netscape"):
+        log.info("COOKIES_SECRET contains cookie text directly — writing to /tmp/cookies.txt")
+        cookies_path.write_text(secret_value, encoding="utf-8")
+    else:
+        from google.cloud import secretmanager
+        log.info(f"COOKIES_SECRET looks like a resource name — fetching via API: {secret_value}")
+        client = secretmanager.SecretManagerServiceClient()
+        try:
+            response = client.access_secret_version(request={"name": secret_value})
+        except Exception as exc:
+            log.error(f"Secret Manager request failed: {exc}")
+            raise
+        log.info(f"Secret retrieved ({len(response.payload.data)} bytes)")
+        cookies_path.write_bytes(response.payload.data)
 
+    line_count = cookies_path.read_text(encoding="utf-8").count("\n")
+    log.info(f"cookies.txt ready at {cookies_path} ({line_count} lines)")
     return cookies_path
 
 
@@ -82,7 +91,7 @@ def main() -> None:
 
     secret = os.environ.get("COOKIES_SECRET")
     if secret:
-        pipeline.COOKIES_FILE = fetch_cookies_from_secret_manager(secret)
+        pipeline.COOKIES_FILE = resolve_cookies(secret)
     elif pipeline.COOKIES_FILE.exists():
         log.info(f"Using local cookies file: {pipeline.COOKIES_FILE}")
     else:
