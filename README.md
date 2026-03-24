@@ -1,79 +1,137 @@
-# Video Clipper
+# spot-me
 
-A Python tool that finds and clips segments of a video where specific text appears on screen, using OCR (`easyocr`).
+A high-performance Python pipeline that downloads YouTube gaming videos, samples frames efficiently, runs OCR, and extracts usernames with timestamps into a searchable JSON index.
+
+Supports single video URLs, full channel URLs, and GPU-accelerated OCR via EasyOCR. Deployable to Google Cloud Run Jobs with an NVIDIA L4 GPU using the included Dockerfile.
 
 ## Features
 
-- Process local video files or YouTube URLs
-- Sample video frames at 1 FPS
-- Use `easyocr` for Optical Character Recognition (OCR) text detection
-- Fuzzy text matching for flexible search (80%+ similarity threshold)
-- Automatically clip segments around matching frames
-- CPU-only operation
-- Command-line interface
+- Accepts a single video URL or an entire YouTube channel/playlist
+- Downloads at max 720p via `yt-dlp`
+- Samples 1 frame every 3 seconds instead of every frame
+- Adaptive frame skipping — static/frozen frames are skipped before OCR runs
+- GPU-accelerated OCR via EasyOCR (falls back to CPU automatically)
+- Deduplicates repeated detections within nearby frames
+- Stores results in an inverted index: `normalized_username → [{video_id, timestamp, confidence, raw_text}]`
+- Incremental JSON checkpointing after every video — safe to interrupt and resume
+- Downloads up to 4 videos in parallel; processes each immediately then deletes the local file
+- Dockerized for Google Cloud Run Jobs with NVIDIA L4 GPU support
 
-## Requirements
+## Project Structure
 
-- Python 3.7+
-- FFmpeg installed on your system
-- Required Python packages (see requirements.txt)
-
-## Installation
-
-1. Clone this repository:
-```bash
-git clone <repository-url>
-cd video-clipper
+```
+spot-me/
+├── main.py          # Entry point — CLI args, kicks off the pipeline
+├── pipeline.py      # All pipeline logic (download, frame extraction, OCR, storage)
+├── Dockerfile       # Cloud Run Jobs deployment (GDC base-cu121, L4 GPU)
+├── .dockerignore
+└── requirements.txt
 ```
 
-2. Install external dependencies (FFmpeg):
-- **Windows**:
-  - FFmpeg: Download from https://ffmpeg.org/download.html
-- **Linux**: `sudo apt-get install ffmpeg`
-- **macOS**: `brew install ffmpeg`
+## Local Setup
 
-3. Create a virtual environment (recommended):
+**Prerequisites**
+- Python 3.10+
+- FFmpeg installed on your system
+  - Windows: download from https://ffmpeg.org/download.html
+  - Linux: `sudo apt-get install ffmpeg`
+  - macOS: `brew install ffmpeg`
+- An NVIDIA GPU with CUDA 12.x for GPU-accelerated OCR (optional — CPU fallback is automatic)
+
+**Install**
+
 ```bash
 python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-```
 
-4. Install Python dependencies:
-```bash
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
+
 pip install -r requirements.txt
+pip install easyocr yt-dlp opencv-python-headless
 ```
 
 ## Usage
 
 ```bash
-python video_clipper.py <video_source> "<search_text>" <output_folder> [--duration DURATION]
+python main.py <url> [--sample-sec N] [--checkpoint FILE]
 ```
 
-Arguments:
-- `video_source`: Path to video file or YouTube URL
-- `search_text`: Text to search for in the video
-- `output_folder`: Folder to save output clips
-- `--duration`: Duration of output clips in seconds (default: 30)
+| Argument | Description | Default |
+|---|---|---|
+| `url` | Single video URL or channel/playlist URL | required |
+| `--sample-sec` | Seconds between sampled frames | `3` |
+| `--checkpoint` | Path to JSON results file | `results.json` |
 
-Example:
+**Examples**
+
 ```bash
-# Process a local video file
-python video_clipper.py input.mp4 "Hello World" output_clips
+# Single video
+python main.py https://www.youtube.com/watch?v=VIDEO_ID
 
-# Process a YouTube video
-python video_clipper.py "https://www.youtube.com/watch?v=example" "Score: 100" output_clips
+# Full channel
+python main.py https://www.youtube.com/@SomeGamer/videos
 
-# Custom duration
-python video_clipper.py input.mp4 "Target Text" output_clips --duration 45
+# Sample every 5 seconds, save to a custom file
+python main.py https://www.youtube.com/@SomeGamer/videos --sample-sec 5 --checkpoint run1.json
+
+# Resume an interrupted run (already-processed video IDs are skipped automatically)
+python main.py https://www.youtube.com/@SomeGamer/videos --checkpoint run1.json
 ```
 
-## Notes
+## Output
 
-- The script runs entirely on CPU
-- Processing time depends on video length and system performance
-- Text matching uses fuzzy string matching (80%+ similarity) for flexible search
-- EasyOCR may download language models on first run (~100MB for English)
-- Make sure you're in the virtual environment before running the script
+Results are written to `results.json` (or `--checkpoint` path) after every video:
+
+```json
+{
+  "dragonslayer": [
+    {
+      "video_id": "aFTvKwmlrcg",
+      "timestamp": 47,
+      "confidence": 0.921,
+      "raw_text": "DragonSlayer!"
+    }
+  ],
+  "xxtrickshot99": [
+    {
+      "video_id": "aFTvKwmlrcg",
+      "timestamp": 182,
+      "confidence": 0.884,
+      "raw_text": "xxTrickShot99"
+    }
+  ]
+}
+```
+
+Text is normalized to lowercase alphanumeric (`DragonSlayer!` → `dragonslayer`) for consistent keying.
+
+## Docker / Cloud Run Jobs
+
+The Dockerfile targets Google Cloud Run Jobs with an NVIDIA L4 GPU.
+
+**Build and push**
+
+```bash
+docker build -t gcr.io/YOUR_PROJECT/spot-me .
+docker push gcr.io/YOUR_PROJECT/spot-me
+```
+
+**Create and run a Cloud Run Job**
+
+```bash
+gcloud run jobs create spot-me \
+  --image gcr.io/YOUR_PROJECT/spot-me \
+  --region us-central1 \
+  --task-timeout 3600 \
+  --set-env-vars BUCKET_NAME=your-gcs-bucket \
+  --args="https://www.youtube.com/@SomeGamer/videos","--sample-sec","5"
+
+gcloud run jobs execute spot-me
+```
+
+**Notes**
+- The EasyOCR English model weights are baked into the image at build time — no cold-start download on every run
+- `BUCKET_NAME` is read from the environment; set it in the Job configuration for GCS output
+- `opencv-python-headless` is used instead of `opencv-python` — no GUI dependencies needed in the container
