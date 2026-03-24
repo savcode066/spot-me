@@ -1,0 +1,15 @@
+# 1. Use a base that has CUDA already installed
+FROM us-docker.pkg.dev/deeplearning-platform-release/gcr.io/base-cu121.py310
+
+# 2. Install system video tools
+RUN apt-get update && apt-get install -y ffmpeg libgl1-mesa-glx
+
+# 3. Copy your repo files into the container
+COPY . /app
+WORKDIR /app
+
+# 4. Install your Python libraries
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir easyocr yt-dlp opencv-python-headless google-cloud-storage
+
+ENTRYPOINT ["python3", "main.py"]
