@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     ffmpeg \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
  
 WORKDIR /app
@@ -46,6 +47,7 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
  
 RUN pip install --no-cache-dir \
+        "numpy<2" \
         $(grep -v "^opencv-python" requirements.txt | tr '\n' ' ') \
         opencv-python-headless \
         google-cloud-storage \
