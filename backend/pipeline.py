@@ -1,13 +1,15 @@
 """
-YouTube Gaming OCR Username Extraction Pipeline
-================================================
-Downloads videos from a YouTube channel or single video URL, extracts frames
-efficiently, runs EasyOCR, and stores detected usernames with timestamps in
-an inverted-index JSON store.
+Twitch Gaming OCR Username Extraction Pipeline
+===============================================
+Downloads VODs and/or clips from a Twitch channel or a single VOD/clip URL,
+extracts frames efficiently, runs EasyOCR, and stores detected usernames with
+timestamps in an inverted-index JSON store.
 
 Usage:
-    python pipeline.py https://www.youtube.com/@SomeGamer/videos
-    python pipeline.py https://www.youtube.com/watch?v=VIDEO_ID
+    python pipeline.py ninja
+    python pipeline.py https://www.twitch.tv/ninja
+    python pipeline.py https://www.twitch.tv/videos/2345678901
+    python pipeline.py https://clips.twitch.tv/SomeClipSlug
 """
 
 import os
@@ -20,10 +22,14 @@ import numpy as np
 import easyocr
 import yt_dlp
 import torch
+import requests
 from pathlib import Path
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Generator, List, Optional, Tuple
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -39,15 +45,19 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
-FRAME_SAMPLE_SEC      = 3          # Sample 1 frame every N seconds
-ADAPTIVE_SKIP_THRESH  = 5.0        # Mean pixel delta to consider frame "static"
-OCR_CONF_MIN          = 0.7        # Drop detections below this confidence
-OCR_TEXT_MIN_LEN      = 3          # Drop texts shorter than this (after normalize)
-RECENT_CACHE_SIZE     = 20         # Deduplicate across this many consecutive frames
-CHECKPOINT_FILE       = "results.json"
-DOWNLOAD_DIR          = Path("downloads")
-MAX_DL_WORKERS        = 4          # Parallel download threads
-COOKIES_FILE          = Path("cookies.txt")
+FRAME_SAMPLE_SEC     = 3          # Sample 1 frame every N seconds
+ADAPTIVE_SKIP_THRESH = 5.0        # Mean pixel delta to consider frame "static"
+OCR_CONF_MIN         = 0.7        # Drop detections below this confidence
+OCR_TEXT_MIN_LEN     = 3          # Drop texts shorter than this (after normalize)
+RECENT_CACHE_SIZE    = 20         # Deduplicate across this many consecutive frames
+CHECKPOINT_FILE      = "results.json"
+DOWNLOAD_DIR         = Path("downloads")
+MAX_DL_WORKERS       = 4          # Parallel download threads
+CONTENT_TYPE         = "vods"     # "vods", "clips", or "all"
+FETCH_LIMIT          = 20         # Max VODs/clips to fetch per type
+
+TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
+TWITCH_API_BASE  = "https://api.twitch.tv/helix"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -68,102 +78,204 @@ _results_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1.  YouTube Utilities
+# 1.  Twitch API Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_video_urls(url: str, processed_ids: set) -> List[Dict]:
-    """
-    Accept either a single video URL or a channel/playlist URL.
+def _get_app_token() -> str:
+    """Fetch a Client Credentials app access token from Twitch."""
+    client_id     = os.environ["TWITCH_CLIENT_ID"]
+    client_secret = os.environ["TWITCH_CLIENT_SECRET"]
+    resp = requests.post(TWITCH_TOKEN_URL, params={
+        "client_id":     client_id,
+        "client_secret": client_secret,
+        "grant_type":    "client_credentials",
+    }, timeout=10)
+    resp.raise_for_status()
+    token = resp.json()["access_token"]
+    log.info("Twitch app access token obtained.")
+    return token
 
-    Single video  → yt-dlp returns info dict directly (no 'entries' key).
-    Channel/playlist → yt-dlp returns a dict with an 'entries' list.
 
-    extract_flat=True fetches only metadata for playlist/channel entries
-    so we don't trigger unnecessary downloads.
-    """
-    using_cookies = COOKIES_FILE.exists()
-    log.info(f"Fetching video list from: {url}")
-    log.info(f"yt-dlp cookies: {COOKIES_FILE} ({'found' if using_cookies else 'NOT FOUND — skipping'})")
-    ydl_opts = {
-        "quiet": True,
-        "extract_flat": True,
-        "ignoreerrors": True,
-        "cookiefile": str(COOKIES_FILE) if using_cookies else None,
-        # Use the Android player client to bypass YouTube's JS n-challenge.
-        # Without a JS runtime (Node/Deno), the web client fails to solve it
-        # and YouTube withholds all video formats, causing extract_info to
-        # return nothing. The Android client doesn't require JS challenge solving.
+def _twitch_headers(token: str) -> dict:
+    return {
+        "Client-ID":    os.environ["TWITCH_CLIENT_ID"],
+        "Authorization": f"Bearer {token}",
     }
+
+
+def _get_user_id(channel: str, token: str) -> Optional[str]:
+    """Resolve a Twitch channel login name to its numeric user ID."""
+    resp = requests.get(
+        f"{TWITCH_API_BASE}/users",
+        headers=_twitch_headers(token),
+        params={"login": channel},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json().get("data", [])
+    if not data:
+        log.error(f"Channel not found on Twitch: {channel}")
+        return None
+    user_id = data[0]["id"]
+    log.info(f"Resolved '{channel}' → user_id={user_id}")
+    return user_id
+
+
+def _fetch_vods(user_id: str, token: str, limit: int, processed_ids: set) -> List[Dict]:
+    """Fetch archived VODs for a channel via the Helix API."""
     videos = []
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if not info:
-            log.error("yt-dlp returned nothing — check the URL.")
-            return videos
-
-        entries = info.get("entries")
-
-        if entries is None:
-            # ── Single video URL ───────────────────────────────────────────
-            vid_id = info.get("id")
-            if vid_id and vid_id not in processed_ids:
+    cursor = None
+    while len(videos) < limit:
+        params: dict = {"user_id": user_id, "type": "archive", "first": min(100, limit)}
+        if cursor:
+            params["after"] = cursor
+        resp = requests.get(
+            f"{TWITCH_API_BASE}/videos",
+            headers=_twitch_headers(token),
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        for v in body.get("data", []):
+            vid_id = v["id"]
+            if vid_id not in processed_ids:
                 videos.append({
                     "id":    vid_id,
-                    "url":   f"https://www.youtube.com/watch?v={vid_id}",
-                    "title": info.get("title", "unknown"),
+                    "url":   f"https://www.twitch.tv/videos/{vid_id}",
+                    "title": v.get("title", "unknown"),
+                    "kind":  "vod",
                 })
-        else:
-            # ── Channel / playlist ─────────────────────────────────────────
-            for entry in entries:
-                if not entry:
-                    continue
-                vid_id = entry.get("id")
-                if vid_id and vid_id not in processed_ids:
-                    videos.append({
-                        "id":    vid_id,
-                        "url":   f"https://www.youtube.com/watch?v={vid_id}",
-                        "title": entry.get("title", "unknown"),
-                    })
+        cursor = body.get("pagination", {}).get("cursor")
+        if not cursor or not body.get("data"):
+            break
+    log.info(f"Found {len(videos)} unprocessed VOD(s).")
+    return videos[:limit]
 
-    log.info(f"Found {len(videos)} unprocessed video(s).")
+
+def _fetch_clips(user_id: str, token: str, limit: int, processed_ids: set) -> List[Dict]:
+    """Fetch clips for a channel via the Helix API."""
+    clips = []
+    cursor = None
+    while len(clips) < limit:
+        params: dict = {"broadcaster_id": user_id, "first": min(100, limit)}
+        if cursor:
+            params["after"] = cursor
+        resp = requests.get(
+            f"{TWITCH_API_BASE}/clips",
+            headers=_twitch_headers(token),
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        for c in body.get("data", []):
+            clip_id = c["id"]
+            if clip_id not in processed_ids:
+                clips.append({
+                    "id":    clip_id,
+                    "url":   f"https://clips.twitch.tv/{clip_id}",
+                    "title": c.get("title", "unknown"),
+                    "kind":  "clip",
+                })
+        cursor = body.get("pagination", {}).get("cursor")
+        if not cursor or not body.get("data"):
+            break
+    log.info(f"Found {len(clips)} unprocessed clip(s).")
+    return clips[:limit]
+
+
+# URL pattern matchers
+_VOD_RE  = re.compile(r"twitch\.tv/videos/(\d+)")
+_CLIP_RE = re.compile(r"clips\.twitch\.tv/([\w-]+)|twitch\.tv/\w+/clip/([\w-]+)")
+_CHAN_RE  = re.compile(r"twitch\.tv/([a-zA-Z0-9_]+)$")
+
+
+def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
+    """
+    Accept any of:
+      - A single VOD URL:   https://www.twitch.tv/videos/12345
+      - A clip URL:         https://clips.twitch.tv/SomeSlug
+      - A channel URL:      https://www.twitch.tv/channelname
+      - A bare channel name: channelname
+
+    For channels, fetches VODs and/or clips according to the CONTENT_TYPE
+    module-level config ("vods", "clips", or "all").
+    """
+    token = _get_app_token()
+
+    # ── Single VOD ────────────────────────────────────────────────────────────
+    m = _VOD_RE.search(target)
+    if m:
+        vid_id = m.group(1)
+        if vid_id in processed_ids:
+            log.info(f"VOD {vid_id} already processed — skipping.")
+            return []
+        return [{"id": vid_id, "url": f"https://www.twitch.tv/videos/{vid_id}",
+                 "title": vid_id, "kind": "vod"}]
+
+    # ── Single clip ───────────────────────────────────────────────────────────
+    m = _CLIP_RE.search(target)
+    if m:
+        clip_id = m.group(1) or m.group(2)
+        if clip_id in processed_ids:
+            log.info(f"Clip {clip_id} already processed — skipping.")
+            return []
+        return [{"id": clip_id, "url": f"https://clips.twitch.tv/{clip_id}",
+                 "title": clip_id, "kind": "clip"}]
+
+    # ── Channel ───────────────────────────────────────────────────────────────
+    m = _CHAN_RE.search(target)
+    channel = m.group(1) if m else target.strip().lstrip("@")
+
+    log.info(f"Fetching content for channel: {channel} (type={CONTENT_TYPE})")
+    user_id = _get_user_id(channel, token)
+    if not user_id:
+        return []
+
+    videos: List[Dict] = []
+    if CONTENT_TYPE in ("vods", "all"):
+        videos += _fetch_vods(user_id, token, FETCH_LIMIT, processed_ids)
+    if CONTENT_TYPE in ("clips", "all"):
+        videos += _fetch_clips(user_id, token, FETCH_LIMIT, processed_ids)
+
     return videos
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.  Download
+# ─────────────────────────────────────────────────────────────────────────────
+
 def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
     """
-    Download a single video at max 720p as mp4.
+    Download a single Twitch VOD or clip at max 720p as mp4 using yt-dlp.
     Returns the local Path on success, None on failure.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(output_dir / f"{video['id']}.%(ext)s")
 
-    using_cookies = COOKIES_FILE.exists()
     ydl_opts = {
         "format": (
             "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]"
             "/bestvideo[height<=720]+bestaudio"
             "/best[height<=720]"
         ),
-        "outtmpl": out_template,
+        "outtmpl":             out_template,
         "merge_output_format": "mp4",
-        "quiet": True,
-        "ignoreerrors": False,
-        "cookiefile": str(COOKIES_FILE) if using_cookies else None,
+        "quiet":               True,
+        "ignoreerrors":        False,
         "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
     }
 
     try:
-        log.info(f"[{video['id']}] Downloading: {video['title']}")
-        log.info(f"[{video['id']}] yt-dlp cookies: {COOKIES_FILE} ({'found' if using_cookies else 'NOT FOUND — skipping'})")
+        log.info(f"[{video['id']}] Downloading {video['kind']}: {video['title']}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video["url"]])
 
-        # Locate output file (yt-dlp may append codec suffix)
         mp4 = output_dir / f"{video['id']}.mp4"
         if mp4.exists():
             log.info(f"[{video['id']}] Saved to {mp4}")
             return mp4
-        # Fallback: find any file with this ID
         matches = list(output_dir.glob(f"{video['id']}.*"))
         if matches:
             log.info(f"[{video['id']}] Saved to {matches[0]}")
@@ -178,7 +290,7 @@ def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2.  Frame Extraction
+# 3.  Frame Extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
 def extract_frames(
@@ -204,7 +316,7 @@ def extract_frames(
 
     fps            = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_frames   = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_interval = max(1, int(fps * FRAME_SAMPLE_SEC))  # frames between samples
+    frame_interval = max(1, int(fps * FRAME_SAMPLE_SEC))
 
     log.info(
         f"  {video_path.name}: {fps:.1f} fps | {total_frames} frames | "
@@ -217,8 +329,6 @@ def extract_frames(
     skipped_static: int  = 0
 
     while True:
-        # ── Fast-forward to next sample point using grab() ─────────────────
-        # Only decode (retrieve) at the target frame index.
         if frame_idx % frame_interval != 0:
             if not cap.grab():
                 break
@@ -231,10 +341,8 @@ def extract_frames(
 
         timestamp = frame_idx / fps
 
-        # ── Adaptive skip: measure scene change vs. previous sample ────────
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if prev_gray is not None:
-            # int16 cast prevents uint8 wrap-around in subtraction
             diff = np.mean(np.abs(gray.astype(np.int16) - prev_gray.astype(np.int16)))
             if diff < ADAPTIVE_SKIP_THRESH:
                 skipped_static += 1
@@ -256,66 +364,49 @@ def extract_frames(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3.  OCR
+# 4.  OCR
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_ocr(frame: np.ndarray) -> List[Tuple[list, str, float]]:
-    """
-    Run EasyOCR on the full frame.
-    Uses the module-level OCR_READER — never re-initializes per call.
-    Returns [(bbox, text, confidence), ...].
-    """
+    """Run EasyOCR on the full frame. Returns [(bbox, text, confidence), ...]."""
     return OCR_READER.readtext(frame)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4.  Text Normalization & Filtering
+# 5.  Text Normalization & Filtering
 # ─────────────────────────────────────────────────────────────────────────────
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 
 
 def normalize(text: str) -> str:
-    """
-    Lowercase and strip everything except a-z 0-9.
-    'Dragon Slayer!' → 'dragonslayer'
-    """
     return _NON_ALNUM.sub("", text.lower())
 
 
 def is_valid(raw_text: str, confidence: float) -> bool:
-    """Gate: confidence threshold + minimum raw text length."""
     return confidence >= OCR_CONF_MIN and len(raw_text) >= OCR_TEXT_MIN_LEN
 
 
-# Valorant UI strings that are exact-match rejections only (never substring).
 VALORANT_UI_EXACT = {
-    # HUD / scoreboard
     "ally", "enemy", "spike", "defused", "planting", "planted",
     "eliminated", "killed", "assists", "deaths", "score",
     "round", "rounds", "won", "lost", "victory", "defeat",
     "attackers", "defenders", "attack", "defense",
-    # buy phase
     "buy", "save", "bonus", "eco", "pistol", "shield", "credits",
     "light", "heavy", "full",
-    # agents
     "jett", "reyna", "sage", "omen", "brimstone", "phoenix",
     "sova", "cypher", "killjoy", "breach", "raze", "viper",
     "astra", "yoru", "skye", "kayo", "chamber", "neon",
     "fade", "harbor", "gekko", "deadlock", "iso", "clove", "vyse", "tejo", "waylay",
-    # abilities (common OCR hits)
     "dismiss", "devour", "updraft", "tailwind", "cloudburst",
     "paranoia", "resurrection", "healing", "blind", "flash",
     "smoke", "wall", "ultimate", "ability",
-    # UI chrome
     "settings", "play", "collection", "battlepass", "store",
     "career", "agents", "maps", "competitive", "unrated",
     "deathmatch", "escalation", "replication", "swiftplay",
     "premier", "custom", "practice",
-    # map names
     "bind", "haven", "split", "ascent", "icebox", "breeze",
     "fracture", "pearl", "lotus", "sunset", "abyss",
-    # misc UI
     "valorant", "riot", "games", "guides", "subscribe",
     "like", "comment", "share", "youtube", "twitch",
     "stream", "live", "chat", "follow", "channel",
@@ -326,7 +417,6 @@ VALORANT_UI_EXACT = {
 }
 
 VALORANT_UI_COMPOUND = {
-    # HUD phrases OCR'd as one word
     "allyplanting", "allyeliminated", "allydefusing",
     "enemyplanting", "enemyeliminated", "enemydefusing",
     "spikeplanted", "spikedefused", "spikerush",
@@ -334,20 +424,18 @@ VALORANT_UI_COMPOUND = {
     "matchpoint", "matchmvp", "teammvp",
     "flawlessvictory", "thriftywin", "acewin",
     "clutchwin", "overtimewin",
-    # YouTube / overlay text
     "valorantguides", "valorantgameplay", "valorantranked",
     "valoranthighlights", "valorantmoments", "valorantclips",
     "trackyourhs", "trackyourstats",
     "likeandsubscribe", "subscribeformore", "hitthebell",
     "leaveacomment", "linkinbio", "inlink", "linkbelow",
     "joinmydiscord", "followmytwitch", "checkouttiktok",
-    # Misc UI / overlay
     "soundtrack", "musicby", "editedby", "recordedby",
     "fullvideo", "watchmore", "nextgame", "lastgame",
     "headshot", "bodyshot", "firstblood", "onetap",
     "ready", "notready", "gameready",
 }
-# Short common English words that are unlikely to be usernames.
+
 COMMON_SHORT = {
     "the", "and", "for", "are", "but", "not", "you", "all",
     "can", "her", "was", "one", "our", "out", "has", "have",
@@ -362,43 +450,26 @@ COMMON_SHORT = {
     "yet", "ago", "far", "few", "per",
 }
 
-# Riot username length bounds (after stripping the #tag).
 _USERNAME_MIN = 3
 _USERNAME_MAX = 16
-
-# Strip optional #tag suffix before length check.
 _TAG_RE = re.compile(r"#[a-z0-9]+$")
 
 
 def looks_like_username(raw_text: str, norm_text: str) -> bool:
-    """
-    Return True if the OCR detection is plausibly a Riot/Valorant username.
-
-    Checks (applied in order):
-      1. Length — Riot names are 3-16 chars (after stripping #tag).
-      2. Pattern — must contain at least one letter; reject purely numeric.
-      3. Exact UI word — reject if norm_text is a known Valorant UI string.
-      4. Short common word — reject if <= 4 chars and a common English word.
-    """
-    # Strip #tag from the raw text before length check.
     base = _TAG_RE.sub("", norm_text)
 
-    # 1. Length filter
     if not (_USERNAME_MIN <= len(base) <= _USERNAME_MAX):
         log.debug("  [SKIP username] length out of range: '%s'", raw_text)
         return False
 
-    # 2. Pattern filter — must have at least one letter; reject all-numeric
     if not any(c.isalpha() for c in base):
         log.debug("  [SKIP username] no letters: '%s'", raw_text)
         return False
 
-    # 3. Exact Valorant UI word/phrase rejection
     if base in VALORANT_UI_EXACT or base in VALORANT_UI_COMPOUND:
         log.debug("  [SKIP username] UI word match: '%s'", raw_text)
         return False
 
-    # 4. Short common English word rejection
     if len(base) <= 4 and base in COMMON_SHORT:
         log.debug("  [SKIP username] common short word: '%s'", raw_text)
         return False
@@ -407,20 +478,13 @@ def looks_like_username(raw_text: str, norm_text: str) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5.  Per-Video Processing
+# 6.  Per-Video Processing
 # ─────────────────────────────────────────────────────────────────────────────
 
 def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
     """
     Full OCR pass over a single video file.
     Returns a local inverted-index dict for merging into the global store.
-
-    Deduplication strategy
-    ----------------------
-    recent_cache is a fixed-size deque of normalized texts seen in the last
-    RECENT_CACHE_SIZE processed frames.  A username that stays on screen
-    across many frames is stored only once per "appearance window" rather
-    than once per frame — dramatically cuts duplicate records.
     """
     log.info(f"[{video_id}] Starting OCR pass on {filepath.name}")
 
@@ -435,18 +499,16 @@ def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
         detections = run_ocr(frame)
 
         for _bbox, raw_text, confidence in detections:
-            # ── Filter ────────────────────────────────────────────────────
             if not is_valid(raw_text, confidence):
                 continue
 
             norm = normalize(raw_text)
             if len(norm) < OCR_TEXT_MIN_LEN:
-                continue   # Normalized form too short (was mostly punctuation)
+                continue
 
             if not looks_like_username(raw_text, norm):
                 continue
 
-            # ── Deduplicate within nearby-frame window ────────────────────
             if norm in recent_cache:
                 continue
 
@@ -465,7 +527,6 @@ def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
                 f"'{raw_text}' (conf={confidence:.2f}) → '{norm}'"
             )
 
-        # Progress heartbeat every 20 sample-frames
         if frames_processed % 20 == 0:
             log.info(
                 f"  [{video_id}] frames={frames_processed} | hits={ocr_hits}"
@@ -481,21 +542,16 @@ def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6.  Results Storage
+# 7.  Results Storage
 # ─────────────────────────────────────────────────────────────────────────────
 
 def merge_results(local: Dict[str, List[Dict]]) -> None:
-    """Thread-safe merge of per-video results into the global store."""
     with _results_lock:
         for norm_text, detections in local.items():
             _results[norm_text].extend(detections)
 
 
 def save_results(filepath: str = CHECKPOINT_FILE) -> None:
-    """
-    Atomically snapshot the results dict to JSON.
-    Called after every video so a crash never loses more than one video's work.
-    """
     with _results_lock:
         snapshot = {k: list(v) for k, v in _results.items()}
 
@@ -510,11 +566,6 @@ def save_results(filepath: str = CHECKPOINT_FILE) -> None:
 
 
 def load_checkpoint(filepath: str = CHECKPOINT_FILE) -> set:
-    """
-    Load a previous run's results.json back into the global store.
-    Returns the set of video IDs that were already processed so they
-    are excluded from the next download batch.
-    """
     if not Path(filepath).exists():
         return set()
 
@@ -534,41 +585,33 @@ def load_checkpoint(filepath: str = CHECKPOINT_FILE) -> set:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7.  Main Pipeline
+# 8.  Main Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_pipeline(url: str) -> Dict[str, List[Dict]]:
+def run_pipeline(target: str) -> Dict[str, List[Dict]]:
     """
     End-to-end pipeline:
 
       1. Resume from checkpoint (skip already-done video IDs)
-      2. Fetch video list (metadata only, no download yet)
-      3. Spin up a ThreadPoolExecutor to download videos in parallel
-         (up to MAX_DL_WORKERS concurrent downloads)
-      4. As each download finishes, process the video immediately:
+      2. Fetch VOD/clip list from Twitch API (or parse single URL)
+      3. Spin up a ThreadPoolExecutor to download in parallel
+      4. As each download finishes, process immediately:
            extract frames → OCR → filter → deduplicate → merge
-      5. Checkpoint results to disk after every video
-      6. Delete the local mp4 immediately after processing to save disk space
-
-    Download parallelism is capped at MAX_DL_WORKERS.  Processing is
-    sequential per-video (EasyOCR is not thread-safe) but overlaps with
-    downloads of subsequent videos, hiding most of the network latency.
+      5. Checkpoint results after every video
+      6. Delete the local file after processing to save disk space
     """
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Resume: restore prior results and skip already-done videos
     processed_ids = load_checkpoint()
 
-    videos = get_video_urls(url, processed_ids)
+    videos = get_content_urls(target, processed_ids)
     if not videos:
         log.info("Nothing new to process.")
         return dict(_results)
 
-    log.info(f"Pipeline starting: {len(videos)} video(s) queued.")
+    log.info(f"Pipeline starting: {len(videos)} item(s) queued.")
 
     with ThreadPoolExecutor(max_workers=MAX_DL_WORKERS) as pool:
-        # Submit all downloads up-front.
-        # The executor queues them internally; at most MAX_DL_WORKERS run at once.
         future_to_video = {
             pool.submit(download_video, vid, DOWNLOAD_DIR): vid
             for vid in videos
@@ -585,17 +628,15 @@ def run_pipeline(url: str) -> Dict[str, List[Dict]]:
                     log.warning(f"[{vid_id}] Skipped — download returned None.")
                     continue
 
-                # Process (blocking; EasyOCR is not thread-safe)
                 local = process_video(filepath, vid_id)
                 merge_results(local)
                 processed_ids.add(vid_id)
-                save_results()   # Incremental checkpoint
+                save_results()
 
             except Exception as exc:
                 log.error(f"[{vid_id}] Unhandled error: {exc}", exc_info=True)
 
             finally:
-                # Always clean up the local file to reclaim disk space
                 if filepath and Path(filepath).exists():
                     Path(filepath).unlink()
                     log.info(f"[{vid_id}] Deleted local file: {filepath}")
@@ -603,4 +644,3 @@ def run_pipeline(url: str) -> Dict[str, List[Dict]]:
     log.info("Pipeline complete.")
     save_results()
     return dict(_results)
-

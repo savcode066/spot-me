@@ -1,7 +1,25 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
 easy_env/
+
+# ── Secrets & environment ─────────────────────────────────────────────────────
 .env
-.claude
-__pycache__
+.env.local
+.env.*.local
+cookies.txt
+
+# ── Pipeline artifacts ────────────────────────────────────────────────────────
+results.json
 downloads/
-*.json
-*.txt
+
+# ── Node / Next.js ────────────────────────────────────────────────────────────
+node_modules/
+.next/
+next-env.d.ts
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.claude/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0F1923;
+  background-image: radial-gradient(circle at 2px 2px, rgba(255, 70, 85, 0.05) 1px, transparent 0);
+  background-size: 32px 32px;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
+/* Scanning progress animation */
+@keyframes scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.scan-line {
+  animation: scan 2s infinite linear;
+}
+
+/* Skeleton loading shimmer */
+.skeleton-pulse {
+  background: linear-gradient(90deg, #1c1c18 25%, #2b2a26 50%, #1c1c18 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Clip-path utilities */
+.v-cut {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+}
+
+.v-cut-reverse {
+  clip-path: polygon(15px 0, 100% 0, 100% 100%, 0 100%, 0 15px);
+}
+
+/* Vanguard grid overlay */
+.vanguard-grid {
+  background-image:
+    linear-gradient(rgba(91, 64, 63, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 64, 63, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Remove default input autofill background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e6e2db;
+  -webkit-box-shadow: 0 0 0px 1000px #1c1c18 inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
