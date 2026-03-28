@@ -34,6 +34,7 @@ Examples:
     )
     parser.add_argument(
         "target",
+        nargs="+",
         help="Channel name, channel URL, single VOD URL, or clip URL",
     )
     parser.add_argument(
@@ -71,10 +72,14 @@ def main() -> None:
     pipeline.FRAME_SAMPLE_SEC = args.sample_sec
     pipeline.CHECKPOINT_FILE  = args.checkpoint
 
-    results = pipeline.run_pipeline(args.target)
+    # If multiple positionals were passed (e.g. a stale Cloud Run Job arg + a URL),
+    # prefer whichever value looks like a URL; fall back to the last value.
+    targets = args.target
+    target = next((t for t in targets if "twitch.tv" in t or "://" in t), targets[-1])
+
+    results = pipeline.run_pipeline(target)
 
     print(f"\nFinished. {len(results)} unique terms detected.")
-    print(f"Results saved to: {pipeline.CHECKPOINT_FILE}")
 
 
 if __name__ == "__main__":
