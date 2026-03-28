@@ -3,7 +3,7 @@ Twitch Gaming OCR Username Extraction Pipeline
 ===============================================
 Downloads VODs and/or clips from a Twitch channel or a single VOD/clip URL,
 extracts frames efficiently, runs EasyOCR, and stores detected usernames with
-timestamps in an inverted-index JSON store.
+timestamps in Firestore (production) or a local results.json (local dev).
 
 Usage:
     python pipeline.py ninja
@@ -50,14 +50,29 @@ ADAPTIVE_SKIP_THRESH = 5.0        # Mean pixel delta to consider frame "static"
 OCR_CONF_MIN         = 0.7        # Drop detections below this confidence
 OCR_TEXT_MIN_LEN     = 3          # Drop texts shorter than this (after normalize)
 RECENT_CACHE_SIZE    = 20         # Deduplicate across this many consecutive frames
-CHECKPOINT_FILE      = "results.json"
+CHECKPOINT_FILE      = "results.json"   # Used in JSON mode only
 DOWNLOAD_DIR         = Path("downloads")
 MAX_DL_WORKERS       = 4          # Parallel download threads
 CONTENT_TYPE         = "vods"     # "vods", "clips", or "all"
 FETCH_LIMIT          = 20         # Max VODs/clips to fetch per type
 
+FIRESTORE_ENABLED = os.environ.get("FIRESTORE_ENABLED", "false").lower() == "true"
+
 TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 TWITCH_API_BASE  = "https://api.twitch.tv/helix"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Firestore client (only initialized when FIRESTORE_ENABLED)
+# ─────────────────────────────────────────────────────────────────────────────
+_db = None
+
+if FIRESTORE_ENABLED:
+    from google.cloud import firestore as _firestore
+    _db = _firestore.Client()
+    log.info("Firestore client initialized.")
+else:
+    log.info("Firestore disabled — using local JSON checkpoint.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -70,9 +85,8 @@ log.info("EasyOCR ready.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Shared Results Store  (inverted index + thread lock)
+# JSON mode: shared results store  (inverted index + thread lock)
 # ─────────────────────────────────────────────────────────────────────────────
-# Structure: { normalized_text: [ {video_id, timestamp, confidence, raw_text} ] }
 _results: Dict[str, List[Dict]] = defaultdict(list)
 _results_lock = threading.Lock()
 
@@ -98,7 +112,7 @@ def _get_app_token() -> str:
 
 def _twitch_headers(token: str) -> dict:
     return {
-        "Client-ID":    os.environ["TWITCH_CLIENT_ID"],
+        "Client-ID":     os.environ["TWITCH_CLIENT_ID"],
         "Authorization": f"Bearer {token}",
     }
 
@@ -185,7 +199,6 @@ def _fetch_clips(user_id: str, token: str, limit: int, processed_ids: set) -> Li
     return clips[:limit]
 
 
-# URL pattern matchers
 _VOD_RE  = re.compile(r"twitch\.tv/videos/(\d+)")
 _CLIP_RE = re.compile(r"clips\.twitch\.tv/([\w-]+)|twitch\.tv/\w+/clip/([\w-]+)")
 _CHAN_RE  = re.compile(r"twitch\.tv/([a-zA-Z0-9_]+)$")
@@ -198,13 +211,9 @@ def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
       - A clip URL:         https://clips.twitch.tv/SomeSlug
       - A channel URL:      https://www.twitch.tv/channelname
       - A bare channel name: channelname
-
-    For channels, fetches VODs and/or clips according to the CONTENT_TYPE
-    module-level config ("vods", "clips", or "all").
     """
     token = _get_app_token()
 
-    # ── Single VOD ────────────────────────────────────────────────────────────
     m = _VOD_RE.search(target)
     if m:
         vid_id = m.group(1)
@@ -214,7 +223,6 @@ def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
         return [{"id": vid_id, "url": f"https://www.twitch.tv/videos/{vid_id}",
                  "title": vid_id, "kind": "vod"}]
 
-    # ── Single clip ───────────────────────────────────────────────────────────
     m = _CLIP_RE.search(target)
     if m:
         clip_id = m.group(1) or m.group(2)
@@ -224,7 +232,6 @@ def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
         return [{"id": clip_id, "url": f"https://clips.twitch.tv/{clip_id}",
                  "title": clip_id, "kind": "clip"}]
 
-    # ── Channel ───────────────────────────────────────────────────────────────
     m = _CHAN_RE.search(target)
     channel = m.group(1) if m else target.strip().lstrip("@")
 
@@ -247,10 +254,7 @@ def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def download_video(video: Dict, output_dir: Path) -> Optional[Path]:
-    """
-    Download a single Twitch VOD or clip at max 720p as mp4 using yt-dlp.
-    Returns the local Path on success, None on failure.
-    """
+    """Download a single Twitch VOD or clip at max 720p as mp4 using yt-dlp."""
     output_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(output_dir / f"{video['id']}.%(ext)s")
 
@@ -299,15 +303,11 @@ def extract_frames(
     """
     Memory-efficient frame sampler.  Yields (timestamp_sec, bgr_frame).
 
-    Key optimizations
-    -----------------
-    cap.grab()  — advances the decode head WITHOUT decoding the frame to RGB.
-                  Much faster than cap.read() for frames we intend to discard.
-                  We only call cap.retrieve() at sample intervals.
+    cap.grab() advances the decode head without decoding — much faster than
+    cap.read() for frames we intend to discard.
 
-    Adaptive skip — computes mean absolute pixel delta between consecutive
-                    sample frames.  If the scene is static (cutscene, pause,
-                    loading screen) the frame is discarded before OCR runs.
+    Adaptive skip discards static scenes (cutscenes, pause screens, etc.)
+    before OCR runs.
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -478,13 +478,111 @@ def looks_like_username(raw_text: str, norm_text: str) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6.  Per-Video Processing
+# 6.  Firestore Storage
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_processed_ids() -> set:
+    """Query Firestore for all previously processed video IDs."""
+    docs = _db.collection("processed_videos").stream()
+    ids = {doc.id for doc in docs}
+    log.info(f"Firestore: {len(ids)} previously processed video(s).")
+    return ids
+
+
+def save_to_firestore(local: Dict[str, List[Dict]], video_id: str) -> int:
+    """
+    Batch-write all OCR hits for a video to the sightings collection.
+    Chunks into batches of 500 to stay within Firestore's per-batch limit.
+    Returns the number of documents written.
+    """
+    from google.cloud import firestore as _fs
+
+    all_docs = []
+    for norm, detections in local.items():
+        for d in detections:
+            all_docs.append({
+                "username_normalized": norm,
+                "raw_text":            d["raw_text"],
+                "video_id":            video_id,
+                "timestamp":           d["timestamp"],
+                "confidence":          d["confidence"],
+                "created_at":          _fs.SERVER_TIMESTAMP,
+            })
+
+    for i in range(0, len(all_docs), 500):
+        batch = _db.batch()
+        for doc_data in all_docs[i:i + 500]:
+            ref = _db.collection("sightings").document()
+            batch.set(ref, doc_data)
+        batch.commit()
+
+    log.info(f"[{video_id}] Wrote {len(all_docs)} sighting(s) to Firestore.")
+    return len(all_docs)
+
+
+def mark_video_processed(video_id: str, hit_count: int) -> None:
+    """Record a video as fully processed in the processed_videos collection."""
+    from google.cloud import firestore as _fs
+
+    _db.collection("processed_videos").document(video_id).set({
+        "video_id":       video_id,
+        "processed_at":   _fs.SERVER_TIMESTAMP,
+        "hit_count":      hit_count,
+    })
+    log.info(f"[{video_id}] Marked as processed in Firestore (hits={hit_count}).")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7.  JSON Storage (local dev fallback)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def merge_results(local: Dict[str, List[Dict]]) -> None:
+    with _results_lock:
+        for norm_text, detections in local.items():
+            _results[norm_text].extend(detections)
+
+
+def save_results(filepath: str = CHECKPOINT_FILE) -> None:
+    with _results_lock:
+        snapshot = {k: list(v) for k, v in _results.items()}
+
+    with open(filepath, "w", encoding="utf-8") as fh:
+        json.dump(snapshot, fh, indent=2, ensure_ascii=False)
+
+    total = sum(len(v) for v in snapshot.values())
+    log.info(
+        f"Checkpoint → {filepath} "
+        f"({len(snapshot)} unique terms, {total} total detections)"
+    )
+
+
+def load_checkpoint(filepath: str = CHECKPOINT_FILE) -> set:
+    if not Path(filepath).exists():
+        return set()
+
+    with open(filepath, "r", encoding="utf-8") as fh:
+        saved: Dict[str, List[Dict]] = json.load(fh)
+
+    with _results_lock:
+        for norm_text, detections in saved.items():
+            _results[norm_text].extend(detections)
+
+    done_ids = {d["video_id"] for dets in saved.values() for d in dets}
+    log.info(
+        f"Loaded checkpoint: {len(done_ids)} processed video(s), "
+        f"{len(saved)} terms restored."
+    )
+    return done_ids
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8.  Per-Video Processing
 # ─────────────────────────────────────────────────────────────────────────────
 
 def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
     """
     Full OCR pass over a single video file.
-    Returns a local inverted-index dict for merging into the global store.
+    Returns a local inverted-index dict for merging/logging.
     """
     log.info(f"[{video_id}] Starting OCR pass on {filepath.name}")
 
@@ -542,67 +640,23 @@ def process_video(filepath: Path, video_id: str) -> Dict[str, List[Dict]]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7.  Results Storage
-# ─────────────────────────────────────────────────────────────────────────────
-
-def merge_results(local: Dict[str, List[Dict]]) -> None:
-    with _results_lock:
-        for norm_text, detections in local.items():
-            _results[norm_text].extend(detections)
-
-
-def save_results(filepath: str = CHECKPOINT_FILE) -> None:
-    with _results_lock:
-        snapshot = {k: list(v) for k, v in _results.items()}
-
-    with open(filepath, "w", encoding="utf-8") as fh:
-        json.dump(snapshot, fh, indent=2, ensure_ascii=False)
-
-    total = sum(len(v) for v in snapshot.values())
-    log.info(
-        f"Checkpoint → {filepath} "
-        f"({len(snapshot)} unique terms, {total} total detections)"
-    )
-
-
-def load_checkpoint(filepath: str = CHECKPOINT_FILE) -> set:
-    if not Path(filepath).exists():
-        return set()
-
-    with open(filepath, "r", encoding="utf-8") as fh:
-        saved: Dict[str, List[Dict]] = json.load(fh)
-
-    with _results_lock:
-        for norm_text, detections in saved.items():
-            _results[norm_text].extend(detections)
-
-    done_ids = {d["video_id"] for dets in saved.values() for d in dets}
-    log.info(
-        f"Loaded checkpoint: {len(done_ids)} processed video(s), "
-        f"{len(saved)} terms restored."
-    )
-    return done_ids
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8.  Main Pipeline
+# 9.  Main Pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_pipeline(target: str) -> Dict[str, List[Dict]]:
     """
     End-to-end pipeline:
 
-      1. Resume from checkpoint (skip already-done video IDs)
+      1. Resume from checkpoint (Firestore or local JSON)
       2. Fetch VOD/clip list from Twitch API (or parse single URL)
-      3. Spin up a ThreadPoolExecutor to download in parallel
-      4. As each download finishes, process immediately:
-           extract frames → OCR → filter → deduplicate → merge
-      5. Checkpoint results after every video
+      3. Download in parallel (ThreadPoolExecutor, MAX_DL_WORKERS)
+      4. Process each downloaded file: extract frames → OCR → filter → dedup
+      5. Persist results (Firestore or local JSON)
       6. Delete the local file after processing to save disk space
     """
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    processed_ids = load_checkpoint()
+    processed_ids = get_processed_ids() if FIRESTORE_ENABLED else load_checkpoint()
 
     videos = get_content_urls(target, processed_ids)
     if not videos:
@@ -629,9 +683,14 @@ def run_pipeline(target: str) -> Dict[str, List[Dict]]:
                     continue
 
                 local = process_video(filepath, vid_id)
-                merge_results(local)
-                processed_ids.add(vid_id)
-                save_results()
+
+                if FIRESTORE_ENABLED:
+                    hit_count = save_to_firestore(local, vid_id)
+                    mark_video_processed(vid_id, hit_count)
+                else:
+                    merge_results(local)
+                    processed_ids.add(vid_id)
+                    save_results()
 
             except Exception as exc:
                 log.error(f"[{vid_id}] Unhandled error: {exc}", exc_info=True)
@@ -642,5 +701,6 @@ def run_pipeline(target: str) -> Dict[str, List[Dict]]:
                     log.info(f"[{vid_id}] Deleted local file: {filepath}")
 
     log.info("Pipeline complete.")
-    save_results()
+    if not FIRESTORE_ENABLED:
+        save_results()
     return dict(_results)

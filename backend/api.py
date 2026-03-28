@@ -5,8 +5,10 @@ Exposes the OCR pipeline as an HTTP API consumed by the Next.js frontend.
 
 Endpoints:
   GET  /api/health                  — liveness check
-  GET  /api/search?username=xxx     — search the results index for a username
-  POST /api/scan                    — kick off a new scan job (async, background)
+  GET  /api/search?username=xxx     — search Firestore for a username
+  GET  /api/videos                  — list all processed videos
+  GET  /api/stats                   — total sightings + videos processed
+  POST /api/scan                    — kick off a local pipeline scan (async)
   GET  /api/scan/{job_id}/status    — poll scan job progress
 
 Run locally:
@@ -14,17 +16,16 @@ Run locally:
   uvicorn api:app --reload --port 8000
 """
 
-import json
 import logging
 import os
 import re
 import threading
 import uuid
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from google.cloud import firestore
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
@@ -44,8 +45,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Results JSON lives one level up from backend/ by default, or override via env.
-RESULTS_FILE = Path(os.environ.get("RESULTS_FILE", Path(__file__).parent.parent / "results.json"))
+db = firestore.Client()
 
 # In-memory scan job store  { job_id: {status, progress, error?} }
 _scan_jobs: Dict[str, dict] = {}
@@ -58,16 +58,6 @@ def _normalize(text: str) -> str:
     return _NON_ALNUM.sub("", text.lower())
 
 
-def _load_results() -> dict:
-    if not RESULTS_FILE.exists():
-        return {}
-    try:
-        return json.loads(RESULTS_FILE.read_text(encoding="utf-8"))
-    except Exception as exc:
-        log.error(f"Failed to read {RESULTS_FILE}: {exc}")
-        return {}
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Models
 # ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +65,6 @@ def _load_results() -> dict:
 class ScanRequest(BaseModel):
     url: str
     sample_sec: float = 3.0
-    checkpoint: Optional[str] = None
 
 
 class Detection(BaseModel):
@@ -90,6 +79,16 @@ class SearchResponse(BaseModel):
     normalized: str
     results: List[Detection]
     total: int
+
+
+class VideoEntry(BaseModel):
+    video_id: str
+    hit_count: int
+
+
+class StatsResponse(BaseModel):
+    total_videos: int
+    total_sightings: int
 
 
 class ScanResponse(BaseModel):
@@ -110,39 +109,78 @@ class JobStatus(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "results_file": str(RESULTS_FILE), "results_exist": RESULTS_FILE.exists()}
+    return {"status": "ok", "storage": "firestore"}
 
 
 @app.get("/api/search", response_model=SearchResponse)
 def search(username: str):
     """
-    Look up a username (or RIOT ID like PlayerName#TAG) in the pre-built index.
+    Look up a username (or Riot ID like PlayerName#TAG) in Firestore.
     Normalizes the query the same way pipeline.py normalizes OCR text.
     """
     if not username.strip():
         raise HTTPException(status_code=400, detail="username is required")
 
-    # Strip #tag before normalizing so "Name#TAG" matches "name"
-    base = re.sub(r"#\S+$", "", username.strip())
+    base       = re.sub(r"#\S+$", "", username.strip())
     normalized = _normalize(base)
 
-    data = _load_results()
-    detections = data.get(normalized, [])
+    docs = (
+        db.collection("sightings")
+        .where("username_normalized", "==", normalized)
+        .stream()
+    )
+
+    detections = [
+        Detection(
+            video_id=d.get("video_id", ""),
+            timestamp=d.get("timestamp", 0),
+            confidence=d.get("confidence", 0.0),
+            raw_text=d.get("raw_text", ""),
+        )
+        for doc in docs
+        for d in [doc.to_dict()]
+    ]
 
     return SearchResponse(
         username=username,
         normalized=normalized,
-        results=[Detection(**d) for d in detections],
+        results=detections,
         total=len(detections),
+    )
+
+
+@app.get("/api/videos", response_model=List[VideoEntry])
+def list_videos():
+    """Return all processed videos with their sighting counts."""
+    docs = db.collection("processed_videos").stream()
+    return [
+        VideoEntry(
+            video_id=doc.id,
+            hit_count=doc.to_dict().get("hit_count", 0),
+        )
+        for doc in docs
+    ]
+
+
+@app.get("/api/stats", response_model=StatsResponse)
+def stats():
+    """Return total processed videos and total sightings counts."""
+    videos_count   = len(list(db.collection("processed_videos").stream()))
+    sightings_count = len(list(db.collection("sightings").stream()))
+    return StatsResponse(
+        total_videos=videos_count,
+        total_sightings=sightings_count,
     )
 
 
 @app.post("/api/scan", response_model=ScanResponse)
 def start_scan(body: ScanRequest):
     """
-    Kick off an async pipeline scan for the given YouTube URL.
-    Returns a job_id that can be polled via GET /api/scan/{job_id}/status.
+    Kick off an async local pipeline scan.
+    For production-scale processing use Cloud Run Jobs instead.
     """
+    log.warning("Local scan triggered — for large jobs prefer Cloud Run Jobs.")
+
     job_id = str(uuid.uuid4())
 
     with _scan_lock:
@@ -150,11 +188,10 @@ def start_scan(body: ScanRequest):
 
     def _run():
         try:
+            os.environ["FIRESTORE_ENABLED"] = "true"
             import pipeline  # lazy import — only needed when scan is triggered
 
             pipeline.FRAME_SAMPLE_SEC = body.sample_sec
-            if body.checkpoint:
-                pipeline.CHECKPOINT_FILE = body.checkpoint
 
             with _scan_lock:
                 _scan_jobs[job_id]["status"] = "running"
@@ -162,14 +199,14 @@ def start_scan(body: ScanRequest):
             pipeline.run_pipeline(body.url)
 
             with _scan_lock:
-                _scan_jobs[job_id]["status"] = "done"
+                _scan_jobs[job_id]["status"]   = "done"
                 _scan_jobs[job_id]["progress"] = 100
 
         except Exception as exc:
             log.error(f"[{job_id}] Scan failed: {exc}", exc_info=True)
             with _scan_lock:
                 _scan_jobs[job_id]["status"] = "error"
-                _scan_jobs[job_id]["error"] = str(exc)
+                _scan_jobs[job_id]["error"]  = str(exc)
 
     thread = threading.Thread(target=_run, daemon=True, name=f"scan-{job_id[:8]}")
     thread.start()

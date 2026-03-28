@@ -9,3 +9,4 @@ torch
 torchvision
 requests>=2.28.0
 python-dotenv>=1.0.0
+google-cloud-firestore>=2.13.0
