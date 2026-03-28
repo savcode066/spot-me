@@ -9,6 +9,7 @@ WORKDIR /app
 # Only install what's NOT already in the base image.
 # PyTorch, numpy, CUDA, and many Google libs are pre-installed.
 RUN pip install --no-cache-dir \
+        "numpy<2.0.0" \
         opencv-python-headless \
         easyocr \
         yt-dlp \
@@ -23,4 +24,4 @@ RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 COPY backend/pipeline.py backend/cli.py ./
 
 
-ENTRYPOINT ["python", "cli.py"]
+ENTRYPOINT ["python", "cli.py", "pipeline.py"]
