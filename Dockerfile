@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
 # doesn't hit the network on every run.
 RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 
-COPY pipeline.py cli.py ./
+COPY backend/pipeline.py backend/cli.py ./
 
 
 ENTRYPOINT ["python", "cli.py"]
