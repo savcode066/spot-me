@@ -57,6 +57,7 @@ MAX_DL_WORKERS       = 4          # Parallel download threads
 CONTENT_TYPE         = "vods"     # "vods", "clips", or "all"
 FETCH_LIMIT          = None       # Max VODs/clips to fetch per type
 MAX_DURATION_SEC     = None       # Skip VODs longer than this (None = no limit)
+VIDEO_SLICE          = None       # Tuple of (start, end) for distributed processing
 
 FIRESTORE_ENABLED = True
 
@@ -175,8 +176,6 @@ def _fetch_vods(user_id: str, token: str, limit: Optional[int], processed_ids: s
         body = resp.json()
         for v in body.get("data", []):
             vid_id = v["id"]
-            if vid_id in processed_ids:
-                continue
             if MAX_DURATION_SEC is not None:
                 try:
                     vod_sec = parse_duration(v.get("duration", "0s"))
@@ -217,13 +216,12 @@ def _fetch_clips(user_id: str, token: str, limit: Optional[int], processed_ids: 
         body = resp.json()
         for c in body.get("data", []):
             clip_id = c["id"]
-            if clip_id not in processed_ids:
-                clips.append({
-                    "id":    clip_id,
-                    "url":   f"https://clips.twitch.tv/{clip_id}",
-                    "title": c.get("title", "unknown"),
-                    "kind":  "clip",
-                })
+            clips.append({
+                "id":    clip_id,
+                "url":   f"https://clips.twitch.tv/{clip_id}",
+                "title": c.get("title", "unknown"),
+                "kind":  "clip",
+            })
         cursor = body.get("pagination", {}).get("cursor")
         if not cursor or not body.get("data"):
             break
@@ -277,6 +275,12 @@ def get_content_urls(target: str, processed_ids: set) -> List[Dict]:
         videos += _fetch_vods(user_id, token, FETCH_LIMIT, processed_ids)
     if CONTENT_TYPE in ("clips", "all"):
         videos += _fetch_clips(user_id, token, FETCH_LIMIT, processed_ids)
+
+    if VIDEO_SLICE:
+        log.info(f"Slicing list from index {VIDEO_SLICE[0]} to {VIDEO_SLICE[1]}...")
+        videos = videos[VIDEO_SLICE[0]:VIDEO_SLICE[1]]
+        
+    videos = [v for v in videos if v["id"] not in processed_ids]
 
     return videos
 
@@ -788,6 +792,11 @@ Examples:
         help="Max VODs/clips to fetch per type (default: fetch all if None)",
     )
     parser.add_argument(
+        "--slice",
+        default=None,
+        help="Slice the fetched videos list for distributed processing, e.g., '0:13'",
+    )
+    parser.add_argument(
         "--max-duration",
         default=None,
         metavar="DURATION",
@@ -810,11 +819,15 @@ Examples:
 def main() -> None:
     args = parse_args()
 
-    global CONTENT_TYPE, FETCH_LIMIT, FRAME_SAMPLE_SEC, CHECKPOINT_FILE, MAX_DURATION_SEC
+    global CONTENT_TYPE, FETCH_LIMIT, FRAME_SAMPLE_SEC, CHECKPOINT_FILE, MAX_DURATION_SEC, VIDEO_SLICE
     CONTENT_TYPE     = args.content_type
     FETCH_LIMIT      = args.limit
     FRAME_SAMPLE_SEC = args.sample_sec
     CHECKPOINT_FILE  = args.checkpoint
+
+    if args.slice:
+        parts = args.slice.split(":")
+        VIDEO_SLICE = (int(parts[0]), int(parts[1]))
 
     if args.max_duration is not None:
         MAX_DURATION_SEC = parse_duration(args.max_duration)
