@@ -8,6 +8,8 @@ Usage:
     python cli.py https://www.twitch.tv/ninja --type all --limit 50
     python cli.py https://www.twitch.tv/videos/2345678901
     python cli.py https://clips.twitch.tv/SomeClipSlug
+    python cli.py ninja --max-duration 5h
+    python cli.py ninja --max-duration 1h30m
 """
 
 import argparse
@@ -51,6 +53,12 @@ Examples:
         help=f"Max VODs/clips to fetch per type (default: {pipeline.FETCH_LIMIT})",
     )
     parser.add_argument(
+        "--max-duration",
+        default=None,
+        metavar="DURATION",
+        help="Skip VODs longer than this (e.g. 5h, 30m, 1h30m). No limit by default.",
+    )
+    parser.add_argument(
         "--sample-sec",
         type=float,
         default=pipeline.FRAME_SAMPLE_SEC,
@@ -67,10 +75,13 @@ Examples:
 def main() -> None:
     args = parse_args()
 
-    pipeline.CONTENT_TYPE    = args.content_type
-    pipeline.FETCH_LIMIT     = args.limit
+    pipeline.CONTENT_TYPE     = args.content_type
+    pipeline.FETCH_LIMIT      = args.limit
     pipeline.FRAME_SAMPLE_SEC = args.sample_sec
     pipeline.CHECKPOINT_FILE  = args.checkpoint
+
+    if args.max_duration is not None:
+        pipeline.MAX_DURATION_SEC = pipeline.parse_duration(args.max_duration)
 
     # If multiple positionals were passed (e.g. a stale Cloud Run Job arg + a URL),
     # prefer whichever value looks like a URL; fall back to the last value.

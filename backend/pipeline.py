@@ -55,11 +55,31 @@ DOWNLOAD_DIR         = Path("downloads")
 MAX_DL_WORKERS       = 4          # Parallel download threads
 CONTENT_TYPE         = "vods"     # "vods", "clips", or "all"
 FETCH_LIMIT          = 20         # Max VODs/clips to fetch per type
+MAX_DURATION_SEC     = None       # Skip VODs longer than this (None = no limit)
 
 FIRESTORE_ENABLED = os.environ.get("FIRESTORE_ENABLED", "false").lower() == "true"
 
 TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 TWITCH_API_BASE  = "https://api.twitch.tv/helix"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Duration utilities
+# ─────────────────────────────────────────────────────────────────────────────
+_DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
+
+
+def parse_duration(s: str) -> int:
+    """
+    Parse a human-readable duration string to seconds.
+    Accepts user input (5h, 30m, 1h30m) and Twitch API format (3h25m31s).
+    Returns 0 for unrecognized input.
+    """
+    m = _DURATION_RE.fullmatch(s.strip())
+    if not m or not any(m.groups()):
+        raise ValueError(f"Unrecognized duration format: '{s}' — use e.g. 5h, 30m, 1h30m")
+    h, mn, sec = (int(x) if x else 0 for x in m.groups())
+    return h * 3600 + mn * 60 + sec
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,13 +173,22 @@ def _fetch_vods(user_id: str, token: str, limit: int, processed_ids: set) -> Lis
         body = resp.json()
         for v in body.get("data", []):
             vid_id = v["id"]
-            if vid_id not in processed_ids:
-                videos.append({
-                    "id":    vid_id,
-                    "url":   f"https://www.twitch.tv/videos/{vid_id}",
-                    "title": v.get("title", "unknown"),
-                    "kind":  "vod",
-                })
+            if vid_id in processed_ids:
+                continue
+            if MAX_DURATION_SEC is not None:
+                try:
+                    vod_sec = parse_duration(v.get("duration", "0s"))
+                except ValueError:
+                    vod_sec = 0
+                if vod_sec > MAX_DURATION_SEC:
+                    log.info(f"  [SKIP] {vid_id} '{v.get('title', '')}' — duration {v.get('duration')} exceeds limit")
+                    continue
+            videos.append({
+                "id":    vid_id,
+                "url":   f"https://www.twitch.tv/videos/{vid_id}",
+                "title": v.get("title", "unknown"),
+                "kind":  "vod",
+            })
         cursor = body.get("pagination", {}).get("cursor")
         if not cursor or not body.get("data"):
             break
