@@ -24,4 +24,4 @@ RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 COPY backend/pipeline.py backend/cli.py ./
 
 
-ENTRYPOINT ["python", "cli.py", "pipeline.py"]
+ENTRYPOINT ["python", "cli.py"]

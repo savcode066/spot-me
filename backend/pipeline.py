@@ -397,8 +397,26 @@ def extract_frames(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_ocr(frame: np.ndarray) -> List[Tuple[list, str, float]]:
-    """Run EasyOCR on the full frame. Returns [(bbox, text, confidence), ...]."""
-    return OCR_READER.readtext(frame)
+    """Run EasyOCR on specified regions. Returns [(bbox, text, confidence), ...]."""
+    h, w = frame.shape[:2]
+    
+    regions = [
+        # Kill feed (top right)
+        (int(h*0.05), int(h*0.35), int(w*0.78), w),
+        # Tab scoreboard (center)
+        (int(h*0.25), int(h*0.72), int(w*0.27), int(w*0.73)),
+        # Bottom HUD (bottom left)
+        (int(h*0.83), h, 0, int(w*0.23))
+    ]
+    
+    all_detections = []
+    for y1, y2, x1, x2 in regions:
+        crop = frame[y1:y2, x1:x2]
+        if crop.size > 0:
+            detections = OCR_READER.readtext(crop)
+            all_detections.extend(detections)
+            
+    return all_detections
 
 
 # ─────────────────────────────────────────────────────────────────────────────
