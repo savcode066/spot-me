@@ -23,6 +23,10 @@ import threading
 import uuid
 from typing import Dict, List, Optional
 
+import requests
+from dotenv import load_dotenv
+load_dotenv()  # loads backend/.env so GOOGLE_CLOUD_PROJECT is available
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import firestore
@@ -53,9 +57,55 @@ _scan_lock = threading.Lock()
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 
+TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
+TWITCH_API_BASE  = "https://api.twitch.tv/helix"
+
 
 def _normalize(text: str) -> str:
     return _NON_ALNUM.sub("", text.lower())
+
+
+def _get_twitch_token() -> str:
+    resp = requests.post(TWITCH_TOKEN_URL, params={
+        "client_id":     os.environ["TWITCH_CLIENT_ID"],
+        "client_secret": os.environ["TWITCH_CLIENT_SECRET"],
+        "grant_type":    "client_credentials",
+    }, timeout=10)
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def _fetch_video_names(video_ids: List[str]) -> Dict[str, str]:
+    """Return {video_id: title} for each id. Falls back to the id on error."""
+    if not video_ids:
+        return {}
+    token = _get_twitch_token()
+    headers = {
+        "Client-ID":     os.environ["TWITCH_CLIENT_ID"],
+        "Authorization": f"Bearer {token}",
+    }
+    names: Dict[str, str] = {}
+
+    vod_ids  = [v for v in video_ids if v.isdigit()]
+    clip_ids = [v for v in video_ids if not v.isdigit()]
+
+    for i in range(0, len(vod_ids), 100):
+        chunk = vod_ids[i:i + 100]
+        resp = requests.get(f"{TWITCH_API_BASE}/videos", headers=headers,
+                            params=[("id", v) for v in chunk], timeout=10)
+        resp.raise_for_status()
+        for item in resp.json().get("data", []):
+            names[str(item["id"])] = item["title"]
+
+    for i in range(0, len(clip_ids), 100):
+        chunk = clip_ids[i:i + 100]
+        resp = requests.get(f"{TWITCH_API_BASE}/clips", headers=headers,
+                            params=[("id", v) for v in chunk], timeout=10)
+        resp.raise_for_status()
+        for item in resp.json().get("data", []):
+            names[str(item["id"])] = item["title"]
+
+    return names
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +119,7 @@ class ScanRequest(BaseModel):
 
 class Detection(BaseModel):
     video_id: str
+    video_name: str
     timestamp: int
     confidence: float
     raw_text: str
@@ -130,15 +181,20 @@ def search(username: str):
         .stream()
     )
 
+    raw_detections = [doc.to_dict() for doc in docs]
+
+    unique_ids = list({d.get("video_id", "") for d in raw_detections if d.get("video_id")})
+    video_names = _fetch_video_names(unique_ids)
+
     detections = [
         Detection(
             video_id=d.get("video_id", ""),
+            video_name=video_names.get(str(d.get("video_id", "")), d.get("video_id", "")),
             timestamp=d.get("timestamp", 0),
             confidence=d.get("confidence", 0.0),
             raw_text=d.get("raw_text", ""),
         )
-        for doc in docs
-        for d in [doc.to_dict()]
+        for d in raw_detections
     ]
 
     return SearchResponse(
@@ -179,6 +235,12 @@ def start_scan(body: ScanRequest):
     Kick off an async local pipeline scan.
     For production-scale processing use Cloud Run Jobs instead.
     """
+    if os.environ.get("ENABLE_LOCAL_SCAN", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403, 
+            detail="Local scanning is disabled. To enable for local dev, set ENABLE_LOCAL_SCAN=true in your .env file."
+        )
+
     log.warning("Local scan triggered — for large jobs prefer Cloud Run Jobs.")
 
     job_id = str(uuid.uuid4())

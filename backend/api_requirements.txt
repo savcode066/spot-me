@@ -1,15 +1,7 @@
-opencv-python>=4.5.0
-ffmpeg-python>=0.2.0
-yt-dlp>=2023.0.0
-numpy>=1.20.0,<2
-Pillow>=9.0.0
-easyocr
-fuzzywuzzy
-torch
-torchvision
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 pydantic>=2.0.0
 google-cloud-firestore
 python-dotenv>=1.0.0
+requests

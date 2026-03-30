@@ -47,8 +47,7 @@ export default function LandingPage() {
 
           <p className="font-body text-on-surface/70 text-base md:text-lg max-w-xl mx-auto mb-8 tracking-tight">
             Enter your username to scan for appearances. Our tactical engine
-            cross-references match history and kill-feeds across 4,000+ hours
-            of footage.
+            cross-references match history and kill-feeds across Tenz's entire twitch account.
           </p>
 
           {/* Interactive search form (client component) */}

@@ -6,6 +6,9 @@ import Header from "@/components/Header";
 import type { Detection, SearchResponse } from "@/lib/api";
 import searchIcon from "@/assets/search.png";
 import searchOffIcon from "@/assets/search_off.png";
+import boltIcon from "@/assets/bolt.png";
+import chevronLeftIcon from "@/assets/chevron_left.png";
+import chevronRightIcon from "@/assets/chevron_right.png";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,10 +19,11 @@ function formatTime(seconds: number): string {
   return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 }
 
-function confidenceBadge(confidence: number) {
-  return confidence >= 0.9
-    ? "bg-error-container text-on-error-container"
-    : "bg-secondary-container text-on-secondary-container";
+function twitchTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h}h${m}m${s}s`;
 }
 
 const PAGE_SIZE = 10;
@@ -133,74 +137,34 @@ function NoResults({
 
 function ResultCard({ result }: { result: Detection }) {
   return (
-    <div className="group bg-surface-container-low hover:bg-surface-container-high transition-colors flex flex-col md:flex-row items-stretch border-l-2 border-primary">
-      {/* Thumbnail placeholder */}
-      <div className="relative w-full md:w-80 h-48 md:h-auto overflow-hidden bg-surface-container flex items-center justify-center shrink-0">
-        <span className="material-symbols-outlined text-6xl text-outline-variant/40">
-          videocam
+    <div className="group bg-surface-container-low hover:bg-surface-container-high transition-colors flex items-center border-l-2 border-outline-variant hover:border-primary px-6 py-4 gap-6">
+      <h3 className="font-headline text-lg font-bold uppercase tracking-tight text-on-background group-hover:text-primary transition-colors flex-1 truncate">
+        {result.video_name}
+      </h3>
+
+      <div className="flex flex-col shrink-0">
+        <span className="text-[9px] text-outline uppercase tracking-[0.2em] font-label">
+          Timestamp
         </span>
-        {/* Timestamp overlay */}
-        <div className="absolute bottom-2 left-2 bg-surface-container-lowest/80 backdrop-blur-sm px-2 py-1 flex items-center gap-2">
-          <span className="material-symbols-outlined text-[14px] text-tertiary">
-            schedule
-          </span>
-          <span className="font-label text-[10px] text-on-surface uppercase tracking-tighter">
-            {formatTime(result.timestamp)}
-          </span>
-        </div>
+        <span className="text-xs font-bold uppercase tracking-widest text-on-surface">
+          {formatTime(result.timestamp)}
+        </span>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 p-6 flex flex-col justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span
-              className={`text-[10px] font-black px-2 py-0.5 tracking-widest uppercase ${confidenceBadge(result.confidence)}`}
-            >
-              {(result.confidence * 100).toFixed(1)}% Confidence
-            </span>
-            <span className="text-outline text-[10px] font-label uppercase tracking-widest">
-              VOD_ID: {result.video_id.slice(0, 8).toUpperCase()}
-            </span>
-          </div>
-          <h3 className="font-headline text-2xl font-bold uppercase tracking-tight text-on-background group-hover:text-primary transition-colors">
-            {result.raw_text}
-          </h3>
-        </div>
-
-        <div className="flex items-center justify-between mt-6 flex-wrap gap-4">
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col">
-              <span className="text-[9px] text-outline uppercase tracking-[0.2em] font-label">
-                Video ID
-              </span>
-              <span className="text-xs font-bold uppercase tracking-widest text-on-surface truncate max-w-[140px]">
-                {result.video_id}
-              </span>
-            </div>
-            <div className="flex flex-col border-l border-outline-variant pl-6">
-              <span className="text-[9px] text-outline uppercase tracking-[0.2em] font-label">
-                Timestamp
-              </span>
-              <span className="text-xs font-bold uppercase tracking-widest text-on-surface">
-                {formatTime(result.timestamp)}
-              </span>
-            </div>
-          </div>
-
-          <a
-            href={`https://www.youtube.com/watch?v=${result.video_id}&t=${result.timestamp}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-primary-container hover:bg-primary text-on-primary-fixed font-label font-black uppercase text-xs px-6 py-3 tracking-[0.15em] transition-all flex items-center gap-2 group/btn"
-          >
-            Jump to Moment
-            <span className="material-symbols-outlined text-sm group-hover/btn:translate-x-1 transition-transform">
-              bolt
-            </span>
-          </a>
-        </div>
-      </div>
+      <a
+        href={`https://www.twitch.tv/videos/${result.video_id}?t=${twitchTimestamp(result.timestamp)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="bg-primary-container hover:bg-primary text-on-primary-fixed font-label font-black uppercase text-xs px-6 py-3 tracking-[0.15em] transition-all flex items-center gap-2 group/btn shrink-0"
+      >
+        Jump to Moment
+        <img
+          src={boltIcon.src}
+          alt=""
+          className="w-[14px] h-[14px] group-hover/btn:translate-x-1 transition-transform"
+          style={{ imageRendering: "crisp-edges" }}
+        />
+      </a>
     </div>
   );
 }
@@ -212,15 +176,13 @@ interface Props {
   initialData: SearchResponse;
 }
 
-// Client component handles pagination and rescan navigation only.
-// All data was fetched server-side — no client-side loading state needed.
 export default function ResultsContent({ username, initialData }: Props) {
   const router = useRouter();
   const [page, setPage] = useState(1);
 
   const { results, total } = initialData;
-  const totalPages   = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageResults  = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleRescan = (q: string) =>
     router.push(`/scanning?username=${encodeURIComponent(q)}`);
@@ -230,7 +192,7 @@ export default function ResultsContent({ username, initialData }: Props) {
   }
 
   return (
-    <>
+    <div className="bg-[#0F1923] min-h-screen">
       <Header
         showSearch
         query={username}
@@ -241,7 +203,7 @@ export default function ResultsContent({ username, initialData }: Props) {
         {/* Page heading */}
         <div className="mb-12">
           <h1 className="font-headline text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none">
-            Search <span className="text-primary">Results</span>
+            Search Results for <span className="text-primary">{username}</span>
           </h1>
         </div>
 
@@ -273,9 +235,7 @@ export default function ResultsContent({ username, initialData }: Props) {
               disabled={page === 1}
               className="w-10 h-10 border border-outline-variant flex items-center justify-center hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              <span className="material-symbols-outlined text-sm">
-                chevron_left
-              </span>
+              <img src={chevronLeftIcon.src} alt="Previous" className="w-[14px] h-[14px]" style={{ imageRendering: "crisp-edges" }} />
             </button>
 
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
@@ -297,13 +257,11 @@ export default function ResultsContent({ username, initialData }: Props) {
               disabled={page === totalPages}
               className="w-10 h-10 border border-outline-variant flex items-center justify-center hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              <span className="material-symbols-outlined text-sm">
-                chevron_right
-              </span>
+              <img src={chevronRightIcon.src} alt="Next" className="w-[14px] h-[14px]" style={{ imageRendering: "crisp-edges" }} />
             </button>
           </div>
         </div>
       </main>
-    </>
+    </div>
   );
 }

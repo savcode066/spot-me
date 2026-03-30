@@ -20,6 +20,7 @@ function apiBase(): string {
 
 export interface Detection {
   video_id: string;
+  video_name: string;
   timestamp: number;
   confidence: number;
   raw_text: string;

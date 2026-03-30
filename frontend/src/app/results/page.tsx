@@ -19,11 +19,21 @@ export default async function ResultsPage({
     results: [],
     total: 0,
   };
+  let apiError: string | null = null;
 
   try {
     data = await searchUsername(username);
-  } catch {
-    // API not reachable — render empty results (no-matches view).
+  } catch (err) {
+    apiError = err instanceof Error ? err.message : "Failed to reach backend";
+  }
+
+  if (apiError) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center p-6">
+        <p className="text-red-500 font-bold text-lg">Backend error: {apiError}</p>
+        <p className="text-sm text-gray-400 mt-2">Make sure the FastAPI server is running on port 8000.</p>
+      </main>
+    );
   }
 
   return <ResultsContent username={username} initialData={data} />;

@@ -33,7 +33,7 @@ export default function SearchForm() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-surface-container-low/80 backdrop-blur-md border-none text-on-background placeholder:text-on-surface/30 font-headline font-bold text-xl uppercase py-5 pl-14 pr-6 focus:ring-0 focus:outline-none transition-all"
-              placeholder="RIOT ID #TAG"
+              placeholder="RIOT USERNAME"
               autoComplete="off"
               spellCheck={false}
             />
