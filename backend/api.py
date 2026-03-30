@@ -27,10 +27,15 @@ import requests
 from dotenv import load_dotenv
 load_dotenv()  # loads backend/.env so GOOGLE_CLOUD_PROJECT is available
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from google.cloud import firestore
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -39,15 +44,38 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # App setup
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Rate limiter — keyed by client IP
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
 app = FastAPI(title="SpotMe API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS — restrict to configured origins; defaults to localhost for dev
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 db = firestore.Client()
 
@@ -56,9 +84,13 @@ _scan_jobs: Dict[str, dict] = {}
 _scan_lock = threading.Lock()
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
+_UUID_RE   = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token"
 TWITCH_API_BASE  = "https://api.twitch.tv/helix"
+
+# Twitch / Riot username constraints: max 50 chars covers "Name#TAG" formats
+USERNAME_MAX_LEN = 50
 
 
 def _normalize(text: str) -> str:
@@ -159,21 +191,27 @@ class JobStatus(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
-def health():
+@limiter.limit("60/minute")
+def health(request: Request):
     return {"status": "ok", "storage": "firestore"}
 
 
 @app.get("/api/search", response_model=SearchResponse)
-def search(username: str):
+@limiter.limit("20/minute")
+def search(
+    request: Request,
+    username: str = Query(..., min_length=1, max_length=USERNAME_MAX_LEN),
+):
     """
     Look up a username (or Riot ID like PlayerName#TAG) in Firestore.
     Normalizes the query the same way pipeline.py normalizes OCR text.
     """
-    if not username.strip():
-        raise HTTPException(status_code=400, detail="username is required")
-
+    # Strip Riot tag suffix (#TAG), then normalize to alphanumeric lowercase
     base       = re.sub(r"#\S+$", "", username.strip())
     normalized = _normalize(base)
+
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Username contains no alphanumeric characters")
 
     docs = (
         db.collection("sightings")
@@ -198,7 +236,7 @@ def search(username: str):
     ]
 
     return SearchResponse(
-        username=username,
+        username=username.strip(),
         normalized=normalized,
         results=detections,
         total=len(detections),
@@ -206,7 +244,8 @@ def search(username: str):
 
 
 @app.get("/api/videos", response_model=List[VideoEntry])
-def list_videos():
+@limiter.limit("30/minute")
+def list_videos(request: Request):
     """Return all processed videos with their sighting counts."""
     docs = db.collection("processed_videos").stream()
     return [
@@ -219,9 +258,10 @@ def list_videos():
 
 
 @app.get("/api/stats", response_model=StatsResponse)
-def stats():
+@limiter.limit("30/minute")
+def stats(request: Request):
     """Return total processed videos and total sightings counts."""
-    videos_count   = len(list(db.collection("processed_videos").stream()))
+    videos_count    = len(list(db.collection("processed_videos").stream()))
     sightings_count = len(list(db.collection("sightings").stream()))
     return StatsResponse(
         total_videos=videos_count,
@@ -230,14 +270,15 @@ def stats():
 
 
 @app.post("/api/scan", response_model=ScanResponse)
-def start_scan(body: ScanRequest):
+@limiter.limit("5/minute")
+def start_scan(request: Request, body: ScanRequest):
     """
     Kick off an async local pipeline scan.
     For production-scale processing use Cloud Run Jobs instead.
     """
     if os.environ.get("ENABLE_LOCAL_SCAN", "false").lower() != "true":
         raise HTTPException(
-            status_code=403, 
+            status_code=403,
             detail="Local scanning is disabled. To enable for local dev, set ENABLE_LOCAL_SCAN=true in your .env file."
         )
 
@@ -277,8 +318,12 @@ def start_scan(body: ScanRequest):
 
 
 @app.get("/api/scan/{job_id}/status", response_model=JobStatus)
-def scan_status(job_id: str):
+@limiter.limit("60/minute")
+def scan_status(request: Request, job_id: str):
     """Poll the status and progress of a running scan job."""
+    if not _UUID_RE.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job ID format")
+
     with _scan_lock:
         job = _scan_jobs.get(job_id)
 

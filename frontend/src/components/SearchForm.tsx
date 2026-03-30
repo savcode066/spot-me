@@ -11,6 +11,9 @@ export default function SearchForm() {
     e.preventDefault();
     const trimmed = username.trim();
     if (!trimmed) return;
+    // Reject input that has no alphanumeric characters after stripping the Riot tag
+    const base = trimmed.replace(/#\S+$/, "");
+    if (!/[a-zA-Z0-9]/.test(base)) return;
     router.push(`/scanning?username=${encodeURIComponent(trimmed)}`);
   };
 
@@ -36,6 +39,7 @@ export default function SearchForm() {
               placeholder="RIOT USERNAME"
               autoComplete="off"
               spellCheck={false}
+              maxLength={50}
             />
           </div>
 

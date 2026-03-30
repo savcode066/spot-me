@@ -40,7 +40,7 @@ export default function ScanningContent({ username }: Props) {
       clearInterval(intervalRef.current!);
       setProgress(100);
       await new Promise((r) => setTimeout(r, 400));
-      router.push(`/results?username=${encodeURIComponent(username)}`);
+      router.replace(`/results?username=${encodeURIComponent(username)}`);
     }, 3000);
 
     return () => {

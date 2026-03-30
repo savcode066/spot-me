@@ -30,8 +30,7 @@ export default async function ResultsPage({
   if (apiError) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center p-6">
-        <p className="text-red-500 font-bold text-lg">Backend error: {apiError}</p>
-        <p className="text-sm text-gray-400 mt-2">Make sure the FastAPI server is running on port 8000.</p>
+        <p className="text-red-500 font-bold text-lg">Something went wrong. Please try again.</p>
       </main>
     );
   }

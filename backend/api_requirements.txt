@@ -5,3 +5,4 @@ pydantic>=2.0.0
 google-cloud-firestore
 python-dotenv>=1.0.0
 requests
+slowapi>=0.1.9
