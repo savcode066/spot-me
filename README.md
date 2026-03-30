@@ -1,170 +1,148 @@
 # spot-me
 
-A high-performance Python pipeline that downloads YouTube gaming videos, samples frames efficiently, runs OCR, and extracts usernames with timestamps into a searchable JSON index.
+A tool that downloads gaming videos, runs OCR on sampled frames, and extracts player usernames with timestamps into a searchable database. Search for any username and see every video and timestamp where they appeared.
 
-Supports single video URLs, full channel URLs, and GPU-accelerated OCR via EasyOCR. Deployable to Google Cloud Run Jobs with an NVIDIA L4 GPU using the included Dockerfile.
-
-## Features
-
-- Accepts a single video URL or an entire YouTube channel/playlist
-- Downloads at max 720p via `yt-dlp`
-- Samples 1 frame every 3 seconds instead of every frame
-- Adaptive frame skipping — static/frozen frames are skipped before OCR runs
-- GPU-accelerated OCR via EasyOCR (falls back to CPU automatically)
-- Deduplicates repeated detections within nearby frames
-- Stores results in an inverted index: `normalized_username → [{video_id, timestamp, confidence, raw_text}]`
-- Incremental JSON checkpointing after every video — safe to interrupt and resume
-- Downloads up to 4 videos in parallel; processes each immediately then deletes the local file
-- Dockerized for Google Cloud Run Jobs with NVIDIA L4 GPU support
-
-## Project Structure
+## Architecture
 
 ```
 spot-me/
-├── main.py          # Entry point — CLI args, kicks off the pipeline
-├── pipeline.py      # All pipeline logic (download, frame extraction, OCR, storage)
-├── Dockerfile       # Cloud Run Jobs deployment (GDC base-cu121, L4 GPU)
-├── .dockerignore
-└── requirements.txt
+├── backend/             # FastAPI HTTP API (Cloud Run service)
+│   ├── api.py           # REST endpoints — search, stats, scan jobs
+│   ├── pipeline.py      # OCR pipeline (download, frame extraction, EasyOCR, Firestore)
+│   ├── cli.py           # CLI entry point for Cloud Run Jobs
+│   ├── api_requirements.txt
+│   └── Dockerfile       # Deploys to Cloud Run (lightweight, CPU-only)
+├── frontend/            # Next.js frontend
+│   └── src/
+│       ├── app/         # Pages: home, /results, /scanning
+│       ├── components/  # Header, SearchForm
+│       └── lib/api.ts   # API client
+├── Dockerfile           # Pipeline worker image (GPU, Cloud Run Jobs)
+└── .dockerignore
 ```
+
+**Data store:** Firestore — `sightings` collection (one doc per detection) + `processed_videos` collection.
+
+**Video titles:** resolved at search time via the Twitch API.
+
+## Backend API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/health` | Liveness check |
+| GET | `/api/search?username=xxx` | Search Firestore for a username |
+| GET | `/api/videos` | List all processed videos |
+| GET | `/api/stats` | Total sightings + videos processed |
+| POST | `/api/scan` | Kick off a local pipeline scan (async) |
+| GET | `/api/scan/{job_id}/status` | Poll scan job progress |
+
+Search normalizes the query (lowercase, alphanumeric only) to match how the pipeline stores OCR text. Supports Riot IDs (`PlayerName#TAG` — the `#TAG` part is stripped before lookup).
 
 ## Local Setup
 
 **Prerequisites**
 - Python 3.10+
-- FFmpeg installed on your system
-  - Windows: download from https://ffmpeg.org/download.html
-  - Linux: `sudo apt-get install ffmpeg`
-  - macOS: `brew install ffmpeg`
-- An NVIDIA GPU with CUDA 12.x for GPU-accelerated OCR (optional — CPU fallback is automatic)
+- Node.js 18+
+- FFmpeg — `brew install ffmpeg` / `sudo apt install ffmpeg` / [ffmpeg.org](https://ffmpeg.org/download.html)
+- GPU with CUDA 12.x for accelerated OCR (optional — CPU fallback is automatic)
 
-**Install**
+**Backend**
 
 ```bash
+cd backend
 python -m venv venv
-
-# Windows
-venv\Scripts\activate
-# macOS / Linux
-source venv/bin/activate
-
-pip install -r requirements.txt
-pip install easyocr yt-dlp opencv-python-headless
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r api_requirements.txt
+uvicorn api:app --reload --port 8000
 ```
 
-## Usage
+Create `backend/.env`:
+```
+GOOGLE_CLOUD_PROJECT=your-project-id
+TWITCH_CLIENT_ID=your-twitch-client-id
+TWITCH_CLIENT_SECRET=your-twitch-client-secret
+ENABLE_LOCAL_SCAN=true   # optional — enables POST /api/scan locally
+```
+
+**Frontend**
 
 ```bash
-python main.py <url> [--sample-sec N] [--checkpoint FILE]
+cd frontend
+npm install
+npm run dev
 ```
 
-| Argument | Description | Default |
-|---|---|---|
-| `url` | Single video URL or channel/playlist URL | required |
-| `--sample-sec` | Seconds between sampled frames | `3` |
-| `--checkpoint` | Path to JSON results file | `results.json` |
+## Deployment
 
-**Examples**
+### Backend API — Cloud Run
+
+```powershell
+# Build and push to Artifact Registry
+docker build -t us-central1-docker.pkg.dev/project-7840866c-14fa-48de-bec/spot-me/backend:latest .
+
+docker push us-central1-docker.pkg.dev/project-7840866c-14fa-48de-bec/spot-me/backend:latest
+
+# Deploy (or redeploy) to Cloud Run
+gcloud run deploy spot-me-backend --image us-central1-docker.pkg.dev/project-7840866c-14fa-48de-bec/spot-me/backend:latest --platform managed --region us-central1 --allow-unauthenticated --port 8080
+```
+
+Only the last command is needed for subsequent deploys after the first.
+
+**First-time setup:**
+```powershell
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com
+gcloud auth configure-docker us-central1-docker.pkg.dev
+gcloud artifacts repositories create spot-me --repository-format=docker --location=us-central1
+```
+
+### Pipeline Worker — Cloud Run Jobs (GPU)
+
+The root `Dockerfile` targets Cloud Run Jobs with an NVIDIA L4 GPU.
 
 ```bash
-# Single video
-python main.py https://www.youtube.com/watch?v=VIDEO_ID
+docker build -t gcr.io/YOUR_PROJECT/spot-me .
+docker push gcr.io/YOUR_PROJECT/spot-me
 
-# Full channel
-python main.py https://www.youtube.com/@SomeGamer/videos
+gcloud run jobs create spot-me \
+  --image gcr.io/YOUR_PROJECT/spot-me \
+  --region us-central1 \
+  --task-timeout 3600 \
+  --set-env-vars COOKIES_SECRET=projects/YOUR_PROJECT/secrets/yt-cookies/versions/latest \
+  --args="https://www.twitch.tv/videos/VIDEO_ID"
 
-# Sample every 5 seconds, save to a custom file
-python main.py https://www.youtube.com/@SomeGamer/videos --sample-sec 5 --checkpoint run1.json
-
-# Resume an interrupted run (already-processed video IDs are skipped automatically)
-python main.py https://www.youtube.com/@SomeGamer/videos --checkpoint run1.json
+gcloud run jobs execute spot-me
 ```
-
-## Output
-
-Results are written to `results.json` (or `--checkpoint` path) after every video:
-
-```json
-{
-  "dragonslayer": [
-    {
-      "video_id": "aFTvKwmlrcg",
-      "timestamp": 47,
-      "confidence": 0.921,
-      "raw_text": "DragonSlayer!"
-    }
-  ],
-  "xxtrickshot99": [
-    {
-      "video_id": "aFTvKwmlrcg",
-      "timestamp": 182,
-      "confidence": 0.884,
-      "raw_text": "xxTrickShot99"
-    }
-  ]
-}
-```
-
-Text is normalized to lowercase alphanumeric (`DragonSlayer!` → `dragonslayer`) for consistent keying.
 
 ## Cookies
 
-yt-dlp needs your YouTube cookies to access age-restricted or account-specific content.
+yt-dlp needs YouTube cookies for age-restricted or account-specific content.
 
-**Local dev** — generate `cookies.txt` from your browser export:
+**Local dev** — place `cookies.txt` in the project root (never committed).
+
+**Cloud Run** — store in Secret Manager:
 ```bash
-python convert_cookies.py   # converts cookies.json → cookies.txt
-```
-`cookies.txt` is in `.gitignore` and `.dockerignore` so it never gets committed or baked into an image.
-
-**Cloud Run Jobs** — `cookies.txt` can't go in git, so the secret is stored in GCP Secret Manager and fetched at runtime via the `COOKIES_SECRET` environment variable. The pipeline resolves cookies in this order:
-1. `COOKIES_SECRET` env var → fetches from Secret Manager (used on Cloud Run)
-2. Local `cookies.txt` file → used directly (local dev)
-3. Neither → proceeds without cookies (public videos only)
-
-**One-time Secret Manager setup:**
-```bash
-# Upload your cookies.txt as a secret
 gcloud secrets create yt-cookies --data-file=cookies.txt
 
-# Grant the Cloud Run Jobs service account access
+# Grant the Cloud Run service account access
 gcloud secrets add-iam-policy-binding yt-cookies \
   --member="serviceAccount:YOUR_SA@YOUR_PROJECT.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
-**To rotate cookies later** (no rebuild needed):
-```bash
-gcloud secrets versions add yt-cookies --data-file=cookies.txt
-```
+To rotate: `gcloud secrets versions add yt-cookies --data-file=cookies.txt`
 
----
+Pipeline resolves cookies in order: `COOKIES_SECRET` env var → local `cookies.txt` → no cookies (public only).
 
-## Docker / Cloud Run Jobs
+## Pipeline CLI
 
-The Dockerfile targets Google Cloud Run Jobs with an NVIDIA L4 GPU.
-
-**Build and push**
+Run the pipeline directly (bypasses the API):
 
 ```bash
-docker build -t gcr.io/YOUR_PROJECT/spot-me .
-docker push gcr.io/YOUR_PROJECT/spot-me
+python cli.py <url> [--sample-sec N] [--max-duration N]
 ```
 
-**Create and run a Cloud Run Job**
-
-```bash
-gcloud run jobs create spot-me \
-  --image gcr.io/YOUR_PROJECT/spot-me \
-  --region us-central1 \
-  --task-timeout 3600 \
-  --set-env-vars BUCKET_NAME=your-gcs-bucket,COOKIES_SECRET=projects/YOUR_PROJECT/secrets/yt-cookies/versions/latest \
-  --args="https://www.youtube.com/@SomeGamer/videos","--sample-sec","5"
-
-gcloud run jobs execute spot-me
-```
-
-**Notes**
-- The EasyOCR English model weights are baked into the image at build time — no cold-start download on every run
-- `BUCKET_NAME` is read from the environment; set it in the Job configuration for GCS output
-- `opencv-python-headless` is used instead of `opencv-python` — no GUI dependencies needed in the container
+| Argument | Description | Default |
+|---|---|---|
+| `url` | Single video URL or channel/playlist | required |
+| `--sample-sec` | Seconds between sampled frames | `3` |
+| `--max-duration` | Skip videos longer than N seconds | none |
