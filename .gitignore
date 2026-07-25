@@ -23,3 +23,6 @@ next-env.d.ts
 .claude/
 .DS_Store
 Thumbs.db
+
+# Agent Instructions
+CLAUDE.md
