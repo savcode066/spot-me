@@ -21,7 +21,6 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Dict, List, Optional
 
 import requests
 
@@ -63,7 +62,7 @@ def _twitch_headers(token: str) -> dict:
     }
 
 
-def _get_user_id(channel: str, token: str) -> Optional[str]:
+def _get_user_id(channel: str, token: str) -> str | None:
     resp = requests.get(
         f"{TWITCH_API_BASE}/users",
         headers=_twitch_headers(token),
@@ -85,7 +84,7 @@ def _parse_duration(s: str) -> int:
 
 
 @cached_vods("twitch")
-def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
+def fetch_all_vods(channel: str) -> list[dict] | None:
     """
     Fetch every archived VOD Twitch still has for a channel — no fetch limit,
     since any past VOD could contain a matchup.
@@ -100,7 +99,7 @@ def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
         log.info(f"Twitch channel not found: {channel}")
         return None
 
-    vods: List[Dict] = []
+    vods: list[dict] = []
     cursor = None
     while True:
         params: dict = {"user_id": user_id, "type": "archive", "first": 100}
@@ -136,7 +135,7 @@ def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
 # Orchestration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_chess_pipeline(user_chess: str, streamer_chess: str, streamer_twitch: str) -> Dict:
+def run_chess_pipeline(user_chess: str, streamer_chess: str, streamer_twitch: str) -> dict:
     """
     End-to-end: fetch the streamer's VODs, bound the chess.com archive fetch
     to that date range, find matchup games, map them onto VOD timestamps.

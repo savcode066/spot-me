@@ -19,7 +19,6 @@ Run locally:
 
 import logging
 import os
-from typing import List
 
 import requests
 from dotenv import load_dotenv
@@ -105,7 +104,7 @@ class ChessSearchResponse(BaseModel):
     user_chess_username: str
     streamer_chess_username: str
     streamer_twitch_username: str
-    results: List[ChessMatch]
+    results: list[ChessMatch]
     total: int
     vods_scanned: int
 
@@ -120,7 +119,7 @@ class KickChessSearchResponse(BaseModel):
     user_chess_username: str
     streamer_chess_username: str
     streamer_kick_username: str
-    results: List[ChessMatch]
+    results: list[ChessMatch]
     total: int
     vods_scanned: int
 
@@ -135,7 +134,7 @@ class YoutubeChessSearchResponse(BaseModel):
     user_chess_username: str
     streamer_chess_username: str
     streamer_youtube_channel: str
-    results: List[ChessMatch]
+    results: list[ChessMatch]
     total: int
     vods_scanned: int
 
@@ -173,7 +172,7 @@ def chess_search(request: Request, body: ChessSearchRequest):
             raise HTTPException(status_code=404, detail=f"chess.com user not found: {user_chess}")
         raise HTTPException(status_code=502, detail=str(exc))
     except requests.RequestException as exc:
-        log.error(f"Chess pipeline upstream request failed: {exc}", exc_info=True)
+        log.exception(f"Chess pipeline upstream request failed: {exc}")
         raise HTTPException(status_code=502, detail="Upstream API request failed")
 
     results = [ChessMatch(**r) for r in outcome["results"]]
@@ -212,7 +211,7 @@ def kick_chess_search(request: Request, body: KickChessSearchRequest):
             raise HTTPException(status_code=404, detail=f"chess.com user not found: {user_chess}")
         raise HTTPException(status_code=502, detail=str(exc))
     except (requests.RequestException, CurlRequestException) as exc:
-        log.error(f"Kick chess pipeline upstream request failed: {exc}", exc_info=True)
+        log.exception(f"Kick chess pipeline upstream request failed: {exc}")
         raise HTTPException(status_code=502, detail="Upstream API request failed")
 
     results = [ChessMatch(**r) for r in outcome["results"]]
@@ -254,7 +253,7 @@ def youtube_chess_search(request: Request, body: YoutubeChessSearchRequest):
             raise HTTPException(status_code=429, detail="YouTube API daily quota reached; try again after the quota resets (midnight Pacific time).")
         raise HTTPException(status_code=502, detail=str(exc))
     except requests.RequestException as exc:
-        log.error(f"YouTube chess pipeline upstream request failed: {exc}", exc_info=True)
+        log.exception(f"YouTube chess pipeline upstream request failed: {exc}")
         raise HTTPException(status_code=502, detail="Upstream API request failed")
 
     results = [ChessMatch(**r) for r in outcome["results"]]

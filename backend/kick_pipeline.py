@@ -25,7 +25,6 @@ chess_pipeline.py via chess_common.py.
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from curl_cffi import requests as creq
 
@@ -44,7 +43,7 @@ KICK_API_BASE = "https://kick.com/api"
 
 
 @cached_vods("kick")
-def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
+def fetch_all_vods(channel: str) -> list[dict] | None:
     """
     Fetch every VOD Kick still has for a channel. Kick has no pagination on
     this endpoint in practice — it always returns everything within its
@@ -65,7 +64,7 @@ def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
         return None
     resp.raise_for_status()
 
-    vods: List[Dict] = []
+    vods: list[dict] = []
     for v in resp.json():
         if v.get("is_live"):
             # Still broadcasting — not an archived VOD yet (duration isn't
@@ -91,7 +90,7 @@ def fetch_all_vods(channel: str) -> Optional[List[Dict]]:
 # Orchestration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_kick_chess_pipeline(user_chess: str, streamer_chess: str, streamer_kick: str) -> Dict:
+def run_kick_chess_pipeline(user_chess: str, streamer_chess: str, streamer_kick: str) -> dict:
     """
     End-to-end: fetch the streamer's Kick VODs, bound the chess.com archive
     fetch to that date range, find matchup games, map them onto VOD

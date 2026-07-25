@@ -22,7 +22,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Dict, List, Optional, Set, Tuple
 
 import requests
 
@@ -49,13 +48,13 @@ def chess_user_exists(username: str) -> bool:
     return resp.status_code == 200
 
 
-def fetch_chess_archives(username: str) -> List[str]:
+def fetch_chess_archives(username: str) -> list[str]:
     resp = _chess_get(f"{CHESS_API_BASE}/player/{username}/games/archives")
     resp.raise_for_status()
     return resp.json().get("archives", [])
 
 
-def month_range(vods: List[Dict]) -> Set[Tuple[int, int]]:
+def month_range(vods: list[dict]) -> set[tuple[int, int]]:
     """Every (year, month) from the oldest VOD through the current month."""
     if not vods:
         return set()
@@ -64,7 +63,7 @@ def month_range(vods: List[Dict]) -> Set[Tuple[int, int]]:
     start = datetime.fromtimestamp(oldest, tz=timezone.utc)
     end = datetime.now(tz=timezone.utc)
 
-    months: Set[Tuple[int, int]] = set()
+    months: set[tuple[int, int]] = set()
     y, m = start.year, start.month
     while (y, m) <= (end.year, end.month):
         months.add((y, m))
@@ -75,7 +74,7 @@ def month_range(vods: List[Dict]) -> Set[Tuple[int, int]]:
     return months
 
 
-def _filter_archives_by_range(archives: List[str], months: Set[Tuple[int, int]]) -> List[str]:
+def _filter_archives_by_range(archives: list[str], months: set[tuple[int, int]]) -> list[str]:
     filtered = []
     for url in archives:
         m = _ARCHIVE_MONTH_RE.search(url)
@@ -84,7 +83,7 @@ def _filter_archives_by_range(archives: List[str], months: Set[Tuple[int, int]])
     return filtered
 
 
-def fetch_games_for_range(username: str, months: Set[Tuple[int, int]]) -> List[Dict]:
+def fetch_games_for_range(username: str, months: set[tuple[int, int]]) -> list[dict]:
     """Fetch and flatten all games from archive-months overlapping `months`."""
     if not months:
         return []
@@ -94,7 +93,7 @@ def fetch_games_for_range(username: str, months: Set[Tuple[int, int]]) -> List[D
     if not relevant:
         return []
 
-    games: List[Dict] = []
+    games: list[dict] = []
     with ThreadPoolExecutor(max_workers=ARCHIVE_FETCH_WORKERS) as pool:
         futures = {pool.submit(_chess_get, url): url for url in relevant}
         for future in as_completed(futures):
@@ -117,13 +116,13 @@ def fetch_games_for_range(username: str, months: Set[Tuple[int, int]]) -> List[D
 VOD_CACHE_TTL_SECONDS = int(os.environ.get("VOD_CACHE_TTL_SECONDS", "1800"))  # 30 min
 
 _cache_lock = threading.Lock()
-_vod_cache: Dict[Tuple[str, str], Tuple[float, Optional[List[Dict]]]] = {}
+_vod_cache: dict[tuple[str, str], tuple[float, list[dict] | None]] = {}
 # key: (platform, channel.lower()) -> (expires_at_monotonic, result)
 
 
 def cached_vods(platform: str):
     """
-    Decorator for a platform's fetch_all_vods(channel) -> Optional[List[Dict]].
+    Decorator for a platform's fetch_all_vods(channel) -> list[dict] | None.
     Caches both hits and "channel not found" (None) for VOD_CACHE_TTL_SECONDS,
     keyed case-insensitively per (platform, channel). Never caches an
     exception (network error, YouTube quota_exceeded, etc.) — those
@@ -154,7 +153,7 @@ def cached_vods(platform: str):
     return decorator
 
 
-def find_matchup_games(games: List[Dict], user_chess: str, streamer_chess: str) -> List[Dict]:
+def find_matchup_games(games: list[dict], user_chess: str, streamer_chess: str) -> list[dict]:
     """
     Filter games down to ones played between user_chess and streamer_chess.
     Returns each match annotated with the user's own result/perspective.
@@ -162,7 +161,7 @@ def find_matchup_games(games: List[Dict], user_chess: str, streamer_chess: str) 
     user_l = user_chess.lower()
     streamer_l = streamer_chess.lower()
 
-    matches: List[Dict] = []
+    matches: list[dict] = []
     for g in games:
         white = g.get("white", {})
         black = g.get("black", {})
@@ -189,13 +188,13 @@ def find_matchup_games(games: List[Dict], user_chess: str, streamer_chess: str) 
     return matches
 
 
-def map_games_to_vods(matches: List[Dict], vods: List[Dict]) -> List[Dict]:
+def map_games_to_vods(matches: list[dict], vods: list[dict]) -> list[dict]:
     """
     For each matched game, find the VOD whose broadcast window contains the
     game's end_time and compute the in-VOD offset. Games with no covering
     VOD (expired/deleted) are dropped.
     """
-    results: List[Dict] = []
+    results: list[dict] = []
     for match in matches:
         end_time = match["end_time"]
         for vod in vods:

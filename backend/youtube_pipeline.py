@@ -31,7 +31,6 @@ import logging
 import os
 import threading
 from datetime import datetime
-from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import requests
@@ -100,7 +99,7 @@ def _youtube_get(endpoint: str, params: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @cached_vods("youtube")
-def fetch_all_vods(channel_handle: str) -> Optional[List[Dict]]:
+def fetch_all_vods(channel_handle: str) -> list[dict] | None:
     """
     Fetch every video on a channel that actually aired via YouTube Live.
 
@@ -115,7 +114,7 @@ def fetch_all_vods(channel_handle: str) -> Optional[List[Dict]]:
         return None
     uploads_playlist = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
-    video_ids: List[str] = []
+    video_ids: list[str] = []
     page_token = None
     while True:
         params: dict = {"part": "contentDetails", "playlistId": uploads_playlist, "maxResults": 50}
@@ -130,7 +129,7 @@ def fetch_all_vods(channel_handle: str) -> Optional[List[Dict]]:
         if not page_token:
             break
 
-    vods: List[Dict] = []
+    vods: list[dict] = []
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i:i + 50]
         details = _youtube_get("videos", {"part": "liveStreamingDetails,snippet", "id": ",".join(chunk)})
@@ -159,7 +158,7 @@ def fetch_all_vods(channel_handle: str) -> Optional[List[Dict]]:
 # Orchestration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_youtube_chess_pipeline(user_chess: str, streamer_chess: str, streamer_youtube_channel: str) -> Dict:
+def run_youtube_chess_pipeline(user_chess: str, streamer_chess: str, streamer_youtube_channel: str) -> dict:
     """
     End-to-end: fetch the streamer's YouTube Live broadcasts, bound the
     chess.com archive fetch to that date range, find matchup games, map
