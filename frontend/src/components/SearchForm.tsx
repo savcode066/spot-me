@@ -14,7 +14,7 @@ export default function SearchForm() {
     // Reject input that has no alphanumeric characters after stripping the Riot tag
     const base = trimmed.replace(/#\S+$/, "");
     if (!/[a-zA-Z0-9]/.test(base)) return;
-    router.push(`/scanning?username=${encodeURIComponent(trimmed)}`);
+    router.push(`/valorant/scanning?username=${encodeURIComponent(trimmed)}`);
   };
 
   return (

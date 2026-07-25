@@ -70,3 +70,78 @@ export async function getScanStatus(jobId: string): Promise<ScanStatus> {
   if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
   return res.json();
 }
+
+// ── Chess.com matchup search ────────────────────────────────────────────────
+// Backend exposes one route per VOD platform (they take a different field
+// name for the streamer's handle), so this dispatches to the right one.
+
+export type ChessPlatform = "twitch" | "kick" | "youtube";
+
+export interface ChessMatch {
+  video_id: string;
+  video_name: string;
+  timestamp: number;
+  opponent: string;
+  result: string;
+  time_class: string;
+  rated: boolean;
+  game_url: string;
+  played_at: number;
+}
+
+export interface ChessMatchupResponse {
+  results: ChessMatch[];
+  total: number;
+  vods_scanned: number;
+}
+
+export interface ChessSearchParams {
+  platform: ChessPlatform;
+  userChess: string;
+  streamerChess: string;
+  channel: string;
+}
+
+const CHESS_ENDPOINT: Record<ChessPlatform, string> = {
+  twitch: "/api/chess/search",
+  kick: "/api/chess/kick/search",
+  youtube: "/api/chess/youtube/search",
+};
+
+const CHESS_CHANNEL_FIELD: Record<ChessPlatform, string> = {
+  twitch: "streamer_twitch_username",
+  kick: "streamer_kick_username",
+  youtube: "streamer_youtube_channel",
+};
+
+export async function searchChessMatchup({
+  platform,
+  userChess,
+  streamerChess,
+  channel,
+}: ChessSearchParams): Promise<ChessMatchupResponse> {
+  const res = await fetch(`${apiBase()}${CHESS_ENDPOINT[platform]}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Don't cache — matchup results depend on the streamer's live VOD list.
+    cache: "no-store",
+    body: JSON.stringify({
+      user_chess_username: userChess,
+      streamer_chess_username: streamerChess,
+      [CHESS_CHANNEL_FIELD[platform]]: channel,
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = `Chess search failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      // Response wasn't JSON — keep the generic message.
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}

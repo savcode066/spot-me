@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SpotMe | Tactical Recognition",
+  title: "SpotMe | Find Yourself in Their VODs",
   description:
-    "Find yourself in TenZ's videos. Our tactical engine cross-references match history and kill-feeds across 4,000+ hours of footage.",
+    "Pick your game — Valorant or Chess.com — and find the exact clip and timestamp of when you played your favorite streamer.",
 };
 
 export default function RootLayout({

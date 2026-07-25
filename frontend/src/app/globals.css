@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600..900;1,9..144,600..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -65,6 +66,24 @@ body {
     linear-gradient(rgba(91, 64, 63, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(91, 64, 63, 0.05) 1px, transparent 1px);
   background-size: 40px 40px;
+}
+
+/* Chess.com board-square grid overlay (chess sub-brand equivalent of vanguard-grid) */
+.chess-grid {
+  background-image:
+    linear-gradient(rgba(238, 238, 210, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238, 238, 210, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* Pulsing indicator dot, chess-accent flavored (mirrors the tertiary pulse used on Valorant pages) */
+@keyframes chess-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(129, 182, 76, 0.45); }
+  70%  { box-shadow: 0 0 0 8px rgba(129, 182, 76, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(129, 182, 76, 0); }
+}
+.chess-pulse-dot {
+  animation: chess-pulse 1.8s infinite;
 }
 
 /* Remove default input autofill background */

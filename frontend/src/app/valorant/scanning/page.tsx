@@ -9,7 +9,7 @@ export default async function ScanningPage({
   searchParams: Promise<{ username?: string }>;
 }) {
   const { username = "" } = await searchParams;
-  if (!username.trim()) redirect("/");
+  if (!username.trim()) redirect("/valorant");
 
   return <ScanningContent username={username} />;
 }

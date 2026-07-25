@@ -57,11 +57,28 @@ const config: Config = {
         "on-error-container":          "#ffdad6",
         "inverse-surface":             "#e6e2db",
         "inverse-on-surface":          "#31302c",
+
+        // Chess.com sub-brand — kept separate from the Valorant token set above
+        // so the two themes never bleed into each other.
+        "chess-bg":                    "#100f0a",
+        "chess-surface":               "#1b1a13",
+        "chess-surface-2":             "#242217",
+        "chess-line":                  "#ede9dc1a",
+        "chess-accent":                "#81b64c",
+        "chess-accent-dim":            "#5b8235",
+        "chess-accent-bright":         "#9bd45f",
+        "chess-highlight":             "#f6f669",
+        "chess-cream":                 "#eeeed2",
+        "chess-text":                  "#ede9dc",
       },
       fontFamily: {
         headline: ["Space Grotesk", "sans-serif"],
         body:     ["Manrope", "sans-serif"],
         label:    ["Space Grotesk", "sans-serif"],
+        // Chess.com sub-brand type — bold italic serif for display,
+        // monospace for notation/data, reused from the Valorant body sans.
+        "chess-display": ["Fraunces", "serif"],
+        mono:             ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       borderRadius: {
         DEFAULT: "0px",

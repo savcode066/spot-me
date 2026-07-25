@@ -6,7 +6,7 @@ import SearchForm from "@/components/SearchForm";
 export default function LandingPage() {
   return (
     <>
-      <Header />
+      <Header backHref="/" />
 
       <main className="relative min-h-[calc(100vh-64px)] mt-16 w-full flex flex-col items-center justify-start pt-16 px-6">
         {/* ── Background decorative elements ── */}
