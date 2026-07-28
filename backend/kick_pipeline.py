@@ -1,28 +1,3 @@
-"""
-Chess.com ↔ Kick Matchup Pipeline
-===================================
-Same idea as chess_pipeline.py (Twitch) but sourcing VODs from Kick
-instead. Kick's official public Developer API has no VOD-listing endpoint
-at all — only currently-live streams — so this hits the same undocumented
-site API kick.com's own frontend (and yt-dlp) use:
-
-    GET https://kick.com/api/v2/channels/{slug}/videos
-
-That endpoint is unauthenticated but sits behind Cloudflare bot
-protection, so plain `requests` gets a 403; it only works with a
-browser-TLS fingerprint via curl_cffi's `impersonate=` (the same trick
-yt-dlp's Kick extractor uses). Being undocumented, it could change or
-break without notice.
-
-Unlike Twitch, Kick auto-deletes VODs after a short window (30 days for
-verified streamers, 7 for non-verified — confirmed against live data, not
-configurable per request), so this will only ever surface recent
-matchups, never a full history.
-
-chess.com fetching and opponent/timestamp matching are shared with
-chess_pipeline.py via chess_common.py.
-"""
-
 import logging
 from datetime import datetime, timezone
 
@@ -44,16 +19,6 @@ KICK_API_BASE = "https://kick.com/api"
 
 @cached_vods("kick")
 def fetch_all_vods(channel: str) -> list[dict] | None:
-    """
-    Fetch every VOD Kick still has for a channel. Kick has no pagination on
-    this endpoint in practice — it always returns everything within its
-    retention window (there's nothing older to page to), so a single
-    request is the full history available.
-
-    Returns [{id, title, created_at_epoch, duration_sec}, ...] (possibly
-    empty if the channel exists but has no VODs left), or None if the
-    channel doesn't resolve to a Kick channel at all.
-    """
     resp = creq.get(
         f"{KICK_API_BASE}/v2/channels/{channel}/videos",
         impersonate="chrome",

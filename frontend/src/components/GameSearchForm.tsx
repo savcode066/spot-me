@@ -17,18 +17,14 @@ const PLATFORMS: { value: ChessPlatform; label: string }[] = [
   { value: "youtube", label: "YouTube" },
 ];
 
-const COPY: Record<Game, { you: string; streamer: string; youPlaceholder: string; streamerPlaceholder: string }> = {
+const COPY: Record<Game, { you: string; streamer: string }> = {
   chess: {
     you: "Your Chess.com Username",
     streamer: "Streamer's Chess.com Username",
-    youPlaceholder: "e.g. savmath06",
-    streamerPlaceholder: "e.g. xQc",
   },
   valorant: {
     you: "Your Riot ID",
     streamer: "Streamer's Riot ID",
-    youPlaceholder: "e.g. TenZ#NA1",
-    streamerPlaceholder: "e.g. TenZ#NA1",
   },
 };
 
@@ -137,12 +133,11 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
               type="text"
               value={you}
               onChange={(e) => setYou(e.target.value)}
-              placeholder={c.youPlaceholder}
               autoComplete="off"
               spellCheck={false}
               maxLength={50}
               required
-              className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
+              className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
             />
             <div className="corner-notch" />
           </div>
@@ -159,12 +154,11 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
                 type="text"
                 value={streamer}
                 onChange={(e) => setStreamer(e.target.value)}
-                placeholder={c.streamerPlaceholder}
                 autoComplete="off"
                 spellCheck={false}
                 maxLength={50}
                 required
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
+                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
               />
               <div className="corner-notch" />
             </div>
@@ -180,12 +174,11 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
                 type="text"
                 value={channel}
                 onChange={(e) => setChannel(e.target.value)}
-                placeholder="channel handle"
                 autoComplete="off"
                 spellCheck={false}
                 maxLength={50}
                 required
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
+                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
               />
               <div className="corner-notch" />
             </div>
