@@ -27,8 +27,10 @@ const COPY: Record<Game, { you: string; streamer: string; idPlaceholder?: string
     streamer: "Streamer's Riot ID",
     // Riot IDs are Name#Tag — the backend rejects a bare username, so this
     // is the one field that still needs a hint. Chess usernames have no
-    // such format requirement, so they stay placeholder-free.
-    idPlaceholder: "Name#Tag",
+    // such format requirement, so they stay placeholder-free. Team/clan
+    // tags (e.g. "T1", "TL") are often part of the literal Riot ID name
+    // itself, not just a cosmetic prefix, so callers need to include it.
+    idPlaceholder: "e.g. T1 TenZ#2001 (w/ team tag)",
   },
 };
 
