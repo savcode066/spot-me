@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "SpotMe | Find Yourself in Their VODs",
   description:
-    "Pick your game — Valorant or Chess.com — and find the exact clip and timestamp of when you played your favorite streamer.",
+    "Search any streamer's VOD library and find the exact clip and timestamp of when you played against them.",
 };
 
 export default function RootLayout({

@@ -1,170 +1,159 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import Header from "@/components/Header";
-import type { Detection, SearchResponse } from "@/lib/api";
-import searchIcon from "@/assets/search.png";
-import searchOffIcon from "@/assets/search_off.png";
-import boltIcon from "@/assets/bolt.png";
-import chevronLeftIcon from "@/assets/chevron_left.png";
-import chevronRightIcon from "@/assets/chevron_right.png";
+import type { ChessPlatform, ValorantMatch, ValorantMatchupResponse } from "@/lib/api";
+
+const PAGE_SIZE = 10;
+
+const PLATFORM_LABEL: Record<ChessPlatform, string> = {
+  twitch: "Twitch",
+  kick: "Kick",
+  youtube: "YouTube",
+};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function formatTime(seconds: number): string {
+function formatClock(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
 }
 
-function twitchTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${h}h${m}m${s}s`;
+function formatDate(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
-const PAGE_SIZE = 10;
+function vodDeepLink(platform: ChessPlatform, videoId: string, seconds: number): string {
+  switch (platform) {
+    case "twitch": {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      return `https://www.twitch.tv/videos/${videoId}?t=${h}h${m}m${s}s`;
+    }
+    case "youtube":
+      return `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
+    case "kick":
+      // Kick has no documented seek-by-timestamp query param — this opens
+      // the right VOD; the timestamp is shown alongside for manual seeking.
+      return `https://kick.com/video/${videoId}`;
+  }
+}
 
-// ── no-results view ───────────────────────────────────────────────────────────
+function resultRail(result: string): string {
+  if (result === "win") return "status-rail-left";
+  if (result === "loss") return "border-l-2 border-error/60";
+  return "border-l-2 border-outline-variant";
+}
 
-function NoResults({
-  username,
-  onRescan,
+function resultBadge(result: string): { label: string; className: string } {
+  if (result === "win") return { label: "Win", className: "bg-primary-container/15 text-primary-container border-primary-container/30" };
+  if (result === "loss") return { label: "Loss", className: "bg-error/15 text-error border-error/30" };
+  return { label: "Unknown", className: "bg-white/10 text-on-surface-variant border-white/20" };
+}
+
+// ── empty state ──────────────────────────────────────────────────────────────
+
+function NoMatchups({
+  viewer,
+  streamer,
+  vodsScanned,
 }: {
-  username: string;
-  onRescan: (q: string) => void;
+  viewer: string;
+  streamer: string;
+  vodsScanned: number;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
   return (
-    <div className="bg-[#0F1923] text-on-background font-body min-h-screen flex flex-col overflow-hidden">
-      <div className="fixed inset-0 vanguard-grid pointer-events-none" />
+    <div className="min-h-screen flex flex-col">
+      <Header backHref="/?game=valorant" backLabel="← New Search" />
 
-      <Header backHref="/?game=valorant" />
-
-      <main className="flex-grow flex items-center justify-center relative z-10 px-4 pt-24">
-        <div className="w-full max-w-2xl">
-          {/* Search retry bar */}
-          <div className="bg-surface-container-low border-l-2 border-[#FF4655] p-2 mb-12 relative">
-            <div className="flex items-center">
-              <div className="px-4 text-[#FF4655]">
-                <img src={searchIcon.src} alt="search" className="w-6 h-5" style={{ imageRendering: "crisp-edges" }} />
-              </div>
-              <input
-                ref={inputRef}
-                defaultValue={username}
-                className="w-full bg-transparent border-none focus:ring-0 text-white font-headline uppercase tracking-widest text-lg placeholder:text-white/20 py-4 outline-none"
-                placeholder="INITIATE NEW USERNAME SEARCH..."
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && inputRef.current?.value.trim()) {
-                    onRescan(inputRef.current.value.trim());
-                  }
-                }}
-              />
-              <button
-                className="bg-primary-container text-on-primary-fixed font-headline font-bold uppercase px-8 py-4 transition-all hover:bg-primary shrink-0"
-                onClick={() => {
-                  if (inputRef.current?.value.trim()) {
-                    onRescan(inputRef.current.value.trim());
-                  }
-                }}
-              >
-                RESCAN
-              </button>
-            </div>
+      <main className="flex-grow flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-xl text-center space-y-6">
+          <div className="flex items-center justify-center gap-4">
+            <div className="h-px w-12 bg-primary-container/30" />
+            <span className="font-label text-[11px] text-primary tracking-[0.3em] uppercase">
+              No Matchups Found
+            </span>
+            <div className="h-px w-12 bg-primary-container/30" />
           </div>
 
-          {/* Empty state graphic */}
-          <div className="flex flex-col items-center text-center space-y-8">
-            <div className="relative w-48 h-48 flex items-center justify-center">
-              <div className="absolute inset-0 border border-[#FF4655]/20 rotate-45" />
-              <div className="absolute inset-4 border border-[#FF4655]/40 -rotate-12" />
-              <img
-                src={searchOffIcon.src}
-                alt="search off"
-                className="w-20 h-20"
-                style={{ imageRendering: "crisp-edges" }}
-              />
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#FF4655]" />
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#FF4655]" />
-            </div>
+          <h1 className="font-headline text-3xl md:text-4xl text-on-surface uppercase tracking-tight font-bold">
+            {viewer} hasn&apos;t played with {streamer}.
+          </h1>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-4">
-                <div className="h-px w-12 bg-[#FF4655]/30" />
-                <span className="text-[#00dbe9] font-headline text-xs tracking-[0.4em] uppercase">
-                  Status: Signal Lost
-                </span>
-                <div className="h-px w-12 bg-[#FF4655]/30" />
-              </div>
+          <p className="font-body text-on-surface-variant text-base leading-relaxed max-w-md mx-auto">
+            We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced match
+            history for both accounts in that window — no shared games turned up.
+          </p>
 
-              <h1 className="text-5xl md:text-7xl font-headline font-black uppercase text-white tracking-tighter leading-none">
-                No matches found.
-              </h1>
-
-              <p className="text-white/60 font-body text-lg max-w-md mx-auto leading-relaxed">
-                Our scanners returned zero results for that identity.{" "}
-                <span className="text-white">Try a different username</span> or
-                verify the spelling of the operative tag.
-              </p>
-            </div>
-          </div>
+          <a
+            href="/?game=valorant"
+            className="inline-flex items-center gap-2 bg-primary-container hover:opacity-90 text-on-primary font-label font-bold uppercase px-8 py-4 tracking-[0.15em] transition-opacity"
+          >
+            New Search
+          </a>
         </div>
       </main>
-
-      {/* Decorative corners */}
-      <div className="fixed bottom-8 left-8 z-10 hidden md:flex flex-col space-y-2 opacity-20">
-        <div className="h-1 w-24 bg-[#FF4655]" />
-        <div className="h-1 w-12 bg-[#FF4655]" />
-        <div className="h-1 w-32 bg-[#FF4655]" />
-      </div>
-      <div className="fixed bottom-8 right-8 z-10 hidden md:block text-right">
-        <p className="text-[10px] font-headline uppercase tracking-[0.3em] text-[#FF4655]">
-          Tactical Interface v2.04
-        </p>
-        <p className="text-[10px] font-headline uppercase tracking-[0.3em] text-white/20">
-          System-Ready
-        </p>
-      </div>
     </div>
   );
 }
 
-// ── result card ───────────────────────────────────────────────────────────────
+// ── match row ────────────────────────────────────────────────────────────────
 
-function ResultCard({ result }: { result: Detection }) {
+function MatchRow({ match, platform, index }: { match: ValorantMatch; platform: ChessPlatform; index: number }) {
+  const badge = resultBadge(match.result);
+
   return (
-    <div className="group bg-surface-container-low hover:bg-surface-container-high transition-colors flex items-center border-l-2 border-outline-variant hover:border-primary px-6 py-4 gap-6">
-      <h3 className="font-headline text-lg font-bold uppercase tracking-tight text-on-background group-hover:text-primary transition-colors flex-1 truncate">
-        {result.video_name}
-      </h3>
-
-      <div className="flex flex-col shrink-0">
-        <span className="text-[9px] text-outline uppercase tracking-[0.2em] font-label">
-          Timestamp
-        </span>
-        <span className="text-xs font-bold uppercase tracking-widest text-on-surface">
-          {formatTime(result.timestamp)}
-        </span>
+    <div className={`group grid grid-cols-1 md:grid-cols-12 gap-y-4 md:gap-4 items-center px-6 py-5 border-t border-outline-variant bg-surface-dim hover:bg-primary-container/[0.03] transition-colors relative ${resultRail(match.result)}`}>
+      <div className="col-span-1 font-label text-on-surface-variant text-[12px] opacity-50 hidden md:block">
+        [{String(index + 1).padStart(3, "0")}]
       </div>
 
-      <a
-        href={`https://www.twitch.tv/videos/${result.video_id}?t=${twitchTimestamp(result.timestamp)}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="bg-primary-container hover:bg-primary text-on-primary-fixed font-label font-black uppercase text-xs px-6 py-3 tracking-[0.15em] transition-all flex items-center gap-2 group/btn shrink-0"
-      >
-        Jump to Moment
-        <img
-          src={boltIcon.src}
-          alt=""
-          className="w-[14px] h-[14px] group-hover/btn:translate-x-1 transition-transform"
-          style={{ imageRendering: "crisp-edges" }}
-        />
-      </a>
+      <div className="col-span-1 md:col-span-5 flex items-center gap-3 min-w-0">
+        <span className={`shrink-0 border px-2.5 py-1 font-label text-[10px] tracking-wider uppercase ${badge.className}`}>
+          {badge.label}
+        </span>
+        <div className="min-w-0">
+          <h3 className="font-headline text-lg text-on-surface uppercase tracking-tight truncate">
+            {match.map} · {match.teammates ? "with" : "vs"} {match.streamer_agent}
+          </h3>
+          <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-wide">
+            {formatDate(match.played_at)} · {match.mode} · playing {match.viewer_agent}
+          </p>
+        </div>
+      </div>
+
+      <div className="col-span-1 md:col-span-2 md:text-right font-label text-primary-container font-bold text-sm">
+        {formatClock(match.timestamp)}
+      </div>
+
+      <div className="col-span-1 md:col-span-4 flex gap-2 md:justify-end">
+        <a
+          href={match.match_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="border border-outline-variant hover:border-primary-container text-on-surface-variant hover:text-on-surface font-label text-xs px-4 py-3 transition-colors flex items-center"
+        >
+          View Match
+        </a>
+        <a
+          href={vodDeepLink(platform, match.video_id, match.timestamp)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bg-primary-container hover:opacity-90 text-on-primary font-label font-black uppercase text-xs px-6 py-3 tracking-[0.1em] transition-opacity flex items-center gap-2"
+        >
+          Watch on {PLATFORM_LABEL[platform]}
+          <span className="material-symbols-outlined text-[16px] group-hover:translate-x-1 transition-transform">
+            play_arrow
+          </span>
+        </a>
+      </div>
     </div>
   );
 }
@@ -172,96 +161,74 @@ function ResultCard({ result }: { result: Detection }) {
 // ── main client shell ─────────────────────────────────────────────────────────
 
 interface Props {
-  username: string;
-  initialData: SearchResponse;
+  viewer: string;
+  streamer: string;
+  platform: ChessPlatform;
+  channel: string;
+  initialData: ValorantMatchupResponse;
 }
 
-export default function ResultsContent({ username, initialData }: Props) {
-  const router = useRouter();
+export default function ResultsContent({ viewer, streamer, platform, initialData }: Props) {
   const [page, setPage] = useState(1);
-
-  const { results, total } = initialData;
-  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const handleRescan = (q: string) =>
-    router.push(`/valorant/scanning?username=${encodeURIComponent(q)}`);
+  const { results, total, vods_scanned } = initialData;
 
   if (total === 0) {
-    return <NoResults username={username} onRescan={handleRescan} />;
+    return <NoMatchups viewer={viewer} streamer={streamer} vodsScanned={vods_scanned} />;
   }
 
-  return (
-    <div className="bg-[#0F1923] min-h-screen">
-      <Header
-        showSearch
-        query={username}
-        onSearch={handleRescan}
-        backHref="/?game=valorant"
-      />
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-      <main className="pt-24 pb-12 px-6 max-w-7xl mx-auto">
-        {/* Page heading */}
-        <div className="mb-12">
-          <h1 className="font-headline text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none">
-            Search Results for <span className="text-primary">{username}</span>
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header backHref="/?game=valorant" backLabel="← New Search" />
+
+      <main className="flex-grow w-full max-w-6xl mx-auto px-6 py-12 md:py-16">
+        <div className="mb-10 border-l-2 border-primary-container pl-6">
+          <div className="font-label text-primary text-[10px] uppercase tracking-[0.3em] mb-2 opacity-70">
+            Query Results · {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}
+          </div>
+          <h1 className="font-headline text-3xl md:text-5xl text-on-surface uppercase leading-none font-bold">
+            {viewer} <span className="text-primary-container">vs {streamer}</span>
           </h1>
         </div>
 
-        {/* Result cards */}
-        <div className="space-y-4">
-          {pageResults.map((result, i) => (
-            <ResultCard
-              key={`${result.video_id}-${result.timestamp}-${i}`}
-              result={result}
-            />
+        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-surface-container-low border border-outline-variant text-on-surface-variant font-label text-[10px] uppercase tracking-widest">
+          <div className="col-span-1">ID</div>
+          <div className="col-span-5">Map / Agent</div>
+          <div className="col-span-2 text-right">Timestamp</div>
+          <div className="col-span-4 text-right">Action</div>
+        </div>
+
+        <div className="flex flex-col border-x border-b border-outline-variant">
+          {pageResults.map((match, i) => (
+            <MatchRow key={`${match.video_id}-${match.played_at}-${i}`} match={match} platform={platform} index={(page - 1) * PAGE_SIZE + i} />
           ))}
         </div>
 
-        {/* Pagination */}
-        <div className="mt-16 flex items-center justify-between border-t border-outline-variant pt-8">
-          <div className="flex items-center gap-4">
-            <span className="font-label text-[10px] text-outline uppercase tracking-[0.3em]">
-              Showing
-            </span>
-            <span className="font-headline text-lg font-bold">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)}{" "}
-              OF {total}
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="w-10 h-10 border border-outline-variant flex items-center justify-center hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <img src={chevronLeftIcon.src} alt="Previous" className="w-[14px] h-[14px]" style={{ imageRendering: "crisp-edges" }} />
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-between">
+            <div className="flex items-center border border-outline-variant px-4 h-10 font-label text-[12px]">
+              PAGE <span className="text-primary-container mx-2">{String(page).padStart(2, "0")}</span> OF {String(totalPages).padStart(2, "0")}
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                key={p}
-                onClick={() => setPage(p)}
-                className={`w-10 h-10 font-black flex items-center justify-center transition-colors ${
-                  p === page
-                    ? "bg-primary-container text-on-primary-container"
-                    : "border border-outline-variant hover:bg-surface-container-high"
-                }`}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {p}
+                <span className="material-symbols-outlined">chevron_left</span>
               </button>
-            ))}
-
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="w-10 h-10 border border-outline-variant flex items-center justify-center hover:bg-surface-container-high transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <img src={chevronRightIcon.src} alt="Next" className="w-[14px] h-[14px]" style={{ imageRendering: "crisp-edges" }} />
-            </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined">chevron_right</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

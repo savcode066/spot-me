@@ -11,6 +11,9 @@ Endpoints:
   POST /api/chess/search            — chess.com matchups mapped to Twitch VOD timestamps
   POST /api/chess/kick/search       — chess.com matchups mapped to Kick VOD timestamps
   POST /api/chess/youtube/search    — chess.com matchups mapped to YouTube Live timestamps
+  POST /api/valorant/search         — Valorant matchups mapped to Twitch VOD timestamps
+  POST /api/valorant/kick/search    — Valorant matchups mapped to Kick VOD timestamps
+  POST /api/valorant/youtube/search — Valorant matchups mapped to YouTube Live timestamps
 
 Run locally:
   cd backend
@@ -27,6 +30,7 @@ load_dotenv()  # loads backend/.env
 import chess_pipeline
 import kick_pipeline
 import youtube_pipeline
+import valorant_pipeline
 from curl_cffi.requests.exceptions import RequestException as CurlRequestException
 
 from fastapi import FastAPI, HTTPException, Request
@@ -135,6 +139,65 @@ class YoutubeChessSearchResponse(BaseModel):
     streamer_chess_username: str
     streamer_youtube_channel: str
     results: list[ChessMatch]
+    total: int
+    vods_scanned: int
+
+
+class ValorantSearchRequest(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_twitch_username: str
+
+
+class ValorantMatch(BaseModel):
+    video_id: str
+    video_name: str
+    timestamp: int
+    played_at: int
+    map: str
+    mode: str
+    result: str
+    teammates: bool
+    viewer_agent: str
+    streamer_agent: str
+    match_url: str
+
+
+class ValorantSearchResponse(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_twitch_username: str
+    results: list[ValorantMatch]
+    total: int
+    vods_scanned: int
+
+
+class KickValorantSearchRequest(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_kick_username: str
+
+
+class KickValorantSearchResponse(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_kick_username: str
+    results: list[ValorantMatch]
+    total: int
+    vods_scanned: int
+
+
+class YoutubeValorantSearchRequest(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_youtube_channel: str
+
+
+class YoutubeValorantSearchResponse(BaseModel):
+    viewer_riot_id: str
+    streamer_riot_id: str
+    streamer_youtube_channel: str
+    results: list[ValorantMatch]
     total: int
     vods_scanned: int
 
@@ -262,6 +325,118 @@ def youtube_chess_search(request: Request, body: YoutubeChessSearchRequest):
         user_chess_username=user_chess,
         streamer_chess_username=streamer_chess,
         streamer_youtube_channel=streamer_youtube,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+_CHANNEL_KIND_LABEL = {"twitch": "Twitch", "kick": "Kick", "youtube": "YouTube"}
+
+
+def _valorant_http_error(exc: ValueError, channel_kind: str, channel: str, viewer_riot_id: str) -> HTTPException:
+    reason = str(exc)
+    if reason == f"{channel_kind}_channel_not_found":
+        return HTTPException(status_code=404, detail=f"{_CHANNEL_KIND_LABEL[channel_kind]} channel not found: {channel}")
+    if reason == "valorant_invalid_riot_id":
+        return HTTPException(status_code=400, detail="Riot IDs must be in Name#Tag form")
+    if reason == "valorant_account_not_found":
+        return HTTPException(status_code=404, detail=f"Riot account not found: {viewer_riot_id}")
+    if reason == "valorant_rate_limited":
+        return HTTPException(status_code=429, detail="Valorant match data API rate limit reached; try again shortly.")
+    return HTTPException(status_code=502, detail=reason)
+
+
+@app.post("/api/valorant/search", response_model=ValorantSearchResponse)
+@limiter.limit("5/minute")
+def valorant_search(request: Request, body: ValorantSearchRequest):
+    """
+    On-demand: finds every Valorant match between two Riot IDs and maps
+    each one onto the streamer's Twitch VOD + in-VOD timestamp.
+    """
+    viewer = body.viewer_riot_id.strip()
+    streamer = body.streamer_riot_id.strip()
+    twitch = body.streamer_twitch_username.strip()
+
+    if not (viewer and streamer and twitch):
+        raise HTTPException(status_code=400, detail="Both Riot IDs and the streamer's Twitch username are required")
+
+    try:
+        outcome = valorant_pipeline.run_valorant_pipeline(viewer, streamer, twitch)
+    except ValueError as exc:
+        raise _valorant_http_error(exc, "twitch", twitch, viewer)
+    except requests.RequestException as exc:
+        log.exception(f"Valorant pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [ValorantMatch(**r) for r in outcome["results"]]
+
+    return ValorantSearchResponse(
+        viewer_riot_id=viewer,
+        streamer_riot_id=streamer,
+        streamer_twitch_username=twitch,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+@app.post("/api/valorant/kick/search", response_model=KickValorantSearchResponse)
+@limiter.limit("5/minute")
+def kick_valorant_search(request: Request, body: KickValorantSearchRequest):
+    """Same as /api/valorant/search but sources VODs from Kick instead of Twitch."""
+    viewer = body.viewer_riot_id.strip()
+    streamer = body.streamer_riot_id.strip()
+    kick = body.streamer_kick_username.strip()
+
+    if not (viewer and streamer and kick):
+        raise HTTPException(status_code=400, detail="Both Riot IDs and the streamer's Kick username are required")
+
+    try:
+        outcome = valorant_pipeline.run_kick_valorant_pipeline(viewer, streamer, kick)
+    except ValueError as exc:
+        raise _valorant_http_error(exc, "kick", kick, viewer)
+    except (requests.RequestException, CurlRequestException) as exc:
+        log.exception(f"Kick Valorant pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [ValorantMatch(**r) for r in outcome["results"]]
+
+    return KickValorantSearchResponse(
+        viewer_riot_id=viewer,
+        streamer_riot_id=streamer,
+        streamer_kick_username=kick,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+@app.post("/api/valorant/youtube/search", response_model=YoutubeValorantSearchResponse)
+@limiter.limit("5/minute")
+def youtube_valorant_search(request: Request, body: YoutubeValorantSearchRequest):
+    """Same as /api/valorant/search but sources VODs from YouTube Live instead of Twitch."""
+    viewer = body.viewer_riot_id.strip()
+    streamer = body.streamer_riot_id.strip()
+    youtube = body.streamer_youtube_channel.strip()
+
+    if not (viewer and streamer and youtube):
+        raise HTTPException(status_code=400, detail="Both Riot IDs and the streamer's YouTube channel are required")
+
+    try:
+        outcome = valorant_pipeline.run_youtube_valorant_pipeline(viewer, streamer, youtube)
+    except ValueError as exc:
+        raise _valorant_http_error(exc, "youtube", youtube, viewer)
+    except requests.RequestException as exc:
+        log.exception(f"YouTube Valorant pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [ValorantMatch(**r) for r in outcome["results"]]
+
+    return YoutubeValorantSearchResponse(
+        viewer_riot_id=viewer,
+        streamer_riot_id=streamer,
+        streamer_youtube_channel=youtube,
         results=results,
         total=len(results),
         vods_scanned=outcome["vods_scanned"],

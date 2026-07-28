@@ -18,10 +18,15 @@ const PLATFORM_LABEL: Record<ChessPlatform, string> = {
   youtube: "YouTube",
 };
 
-const SKELETON_CARDS = [
-  { glyph: "♞", borderClass: "border-chess-accent/40" },
-  { glyph: "♟", borderClass: "border-chess-accent/20" },
-  { glyph: "♛", borderClass: "border-chess-accent/10" },
+const SKELETON_CARDS = ["♞", "♟", "♛"];
+
+const FACTS = [
+  "The first eSports tournament was held in 1972 at Stanford University.",
+  "Nintendo was founded in 1889 as a playing card company.",
+  "The highest possible score in Pac-Man is 3,333,360 points.",
+  "Space Invaders was so popular it caused a coin shortage in Japan.",
+  "The PlayStation 2 is the best-selling game console of all time.",
+  "Chess has more possible game states than atoms in the observable universe.",
 ];
 
 // Client shell for the chess scanning page — cosmetic progress animation
@@ -30,6 +35,7 @@ const SKELETON_CARDS = [
 export default function ChessScanningContent({ user, streamer, platform, channel }: Props) {
   const router = useRouter();
   const [progress, setProgress] = useState(0);
+  const [factIndex, setFactIndex] = useState(0);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,57 +65,47 @@ export default function ChessScanningContent({ user, streamer, platform, channel
     };
   }, [user, streamer, platform, channel, router]);
 
+  useEffect(() => {
+    const id = setInterval(() => setFactIndex((i) => (i + 1) % FACTS.length), 6000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <>
-      <Header theme="chess" minimal />
+    <div className="min-h-screen flex flex-col">
+      <Header minimal />
+      <div className="page-scanline z-10" />
 
-      <main className="relative pt-16 min-h-screen flex flex-col items-center justify-center p-6 bg-chess-bg chess-grid">
-        <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
-          <div className="absolute top-1/2 left-0 w-full h-px bg-chess-line" />
-          <div className="absolute top-0 left-1/2 w-px h-full bg-chess-line" />
-          <div className="absolute bottom-10 right-10 text-[10rem] font-chess-display font-black italic text-chess-cream/5 leading-none select-none uppercase">
-            Scanning
-          </div>
-        </div>
-
-        <div className="w-full max-w-3xl z-10 space-y-12">
+      <main className="relative z-20 flex-grow w-full flex flex-col items-center justify-center px-6 py-12">
+        <div className="w-full max-w-2xl flex flex-col gap-8">
           <div className="space-y-4">
-            <div className="flex justify-between items-end border-b border-chess-line pb-4">
-              <h1 className="text-3xl md:text-5xl font-chess-display font-black italic uppercase tracking-tight leading-none text-chess-text">
-                Cross-referencing {PLATFORM_LABEL[platform]} VODs...
+            <div className="flex justify-between items-end border-b border-outline-variant pb-4">
+              <h1 className="font-headline text-2xl md:text-4xl text-on-surface uppercase tracking-tight glitch-text">
+                Scanning {PLATFORM_LABEL[platform]} VODs...
               </h1>
               <div className="hidden md:block text-right shrink-0 ml-6">
-                <p className="text-chess-text font-mono font-bold text-2xl">{Math.round(progress)}%</p>
+                <p className="font-label font-bold text-2xl text-on-surface">{Math.round(progress)}%</p>
               </div>
             </div>
 
-            <div className="relative h-2 w-full bg-chess-surface-2 overflow-hidden rounded-full">
-              <div className="absolute inset-0 flex justify-between px-1 pointer-events-none">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="w-px h-full bg-chess-bg/50" />
-                ))}
-              </div>
+            <div className="relative h-2 w-full bg-surface-container-high overflow-hidden rounded-full">
               <div
-                className="absolute top-0 left-0 h-full bg-chess-accent transition-all duration-500 ease-out"
+                className="absolute top-0 left-0 h-full bg-primary-container transition-all duration-500 ease-out"
                 style={{ width: `${progress}%` }}
               />
-              <div className="absolute top-0 left-0 h-full w-24 bg-gradient-to-r from-transparent via-chess-cream/40 to-transparent scan-line" />
+              <div className="absolute top-0 left-0 h-full w-24 bg-gradient-to-r from-transparent via-white/40 to-transparent scan-line" />
             </div>
 
             <div className="flex justify-end items-center gap-2">
-              <span className="w-2 h-2 bg-chess-accent animate-pulse inline-block rounded-full" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-chess-accent-bright font-bold">
+              <span className="w-2 h-2 bg-primary-container animate-pulse inline-block rounded-full" />
+              <span className="font-label text-[10px] uppercase tracking-[0.2em] text-primary font-bold">
                 Matching {user} vs {streamer}
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-40">
-            {SKELETON_CARDS.map((card, i) => (
-              <div
-                key={i}
-                className={`bg-chess-surface p-6 space-y-4 border-l-2 ${card.borderClass} relative rounded`}
-              >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full opacity-40">
+            {SKELETON_CARDS.map((glyph, i) => (
+              <div key={i} className="status-rail-left bg-surface-container-low p-6 space-y-4 relative">
                 <div className="flex justify-between">
                   <div className="h-3 w-16 skeleton-pulse" />
                   <div className="h-3 w-8 skeleton-pulse" />
@@ -119,21 +115,27 @@ export default function ChessScanningContent({ user, streamer, platform, channel
                   <div className="h-2 w-full skeleton-pulse opacity-50" />
                   <div className="h-2 w-3/4 skeleton-pulse opacity-50" />
                 </div>
-                <div className="absolute -bottom-1 -right-1 text-4xl text-chess-cream/10 select-none">
-                  {card.glyph}
+                <div className="absolute -bottom-1 -right-1 text-4xl text-on-surface-variant/20 select-none">
+                  {glyph}
                 </div>
               </div>
             ))}
           </div>
-        </div>
 
-        <div className="fixed bottom-6 right-6 flex flex-col items-end z-20">
-          <div className="text-[10px] font-mono uppercase tracking-[0.4em] text-chess-cream/40 rotate-90 origin-right translate-y-[-50px]">
-            Archive Sync
+          {/* Real delight, not fake telemetry — a bit of gaming trivia while we wait */}
+          <div className="w-full bg-surface-container-low border-l-4 border-primary-container p-6 relative">
+            <div className="absolute -top-3 -left-1 font-label text-[10px] bg-primary-container text-on-primary px-2 py-0.5 uppercase tracking-wider">
+              While You Wait
+            </div>
+            <div className="flex items-start gap-4">
+              <span className="material-symbols-outlined material-symbols-filled text-primary mt-1">info</span>
+              <p className="font-body text-on-surface italic transition-opacity duration-500">
+                {FACTS[factIndex]}
+              </p>
+            </div>
           </div>
-          <div className="w-12 h-12 border-b-4 border-r-4 border-chess-accent" />
         </div>
       </main>
-    </>
+    </div>
   );
 }

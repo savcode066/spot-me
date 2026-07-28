@@ -48,85 +48,91 @@ function vodDeepLink(platform: ChessPlatform, videoId: string, seconds: number):
 
 const DRAW_RESULTS = new Set(["agreed", "repetition", "stalemate", "insufficient", "50move", "timevsinsufficient"]);
 
+function resultRail(result: string): string {
+  if (result === "win") return "status-rail-left";
+  if (DRAW_RESULTS.has(result)) return "border-l-2 border-outline-variant";
+  return "border-l-2 border-error/60";
+}
+
 function resultBadge(result: string): { label: string; className: string } {
-  if (result === "win") return { label: "Win", className: "bg-chess-accent/15 text-chess-accent-bright border-chess-accent/30" };
-  if (DRAW_RESULTS.has(result)) return { label: "Draw", className: "bg-chess-cream/10 text-chess-cream/70 border-chess-cream/20" };
-  return { label: "Loss", className: "bg-[#c65b4a]/15 text-[#e08a7a] border-[#c65b4a]/30" };
+  if (result === "win") return { label: "Win", className: "bg-primary-container/15 text-primary-container border-primary-container/30" };
+  if (DRAW_RESULTS.has(result)) return { label: "Draw", className: "bg-white/10 text-on-surface-variant border-white/20" };
+  return { label: "Loss", className: "bg-error/15 text-error border-error/30" };
 }
 
 // ── empty state ──────────────────────────────────────────────────────────────
 
 function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: string; vodsScanned: number }) {
   return (
-    <div className="min-h-screen bg-chess-bg text-chess-text chess-grid">
-      <Header theme="chess" backHref="/?game=chess" backLabel="← New Search" />
+    <div className="min-h-screen flex flex-col">
+      <Header backHref="/?game=chess" backLabel="← New Search" />
 
-      <main className="pt-32 pb-16 px-6 max-w-2xl mx-auto text-center">
-        <div className="flex items-center justify-center gap-4 mb-6">
-          <div className="h-px w-12 bg-chess-accent/30" />
-          <span className="font-mono text-xs tracking-[0.4em] uppercase text-chess-accent-bright">
-            No Matchups Found
-          </span>
-          <div className="h-px w-12 bg-chess-accent/30" />
+      <main className="flex-grow flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-xl text-center space-y-6">
+          <div className="flex items-center justify-center gap-4">
+            <div className="h-px w-12 bg-primary-container/30" />
+            <span className="font-label text-[11px] text-primary tracking-[0.3em] uppercase">
+              No Matchups Found
+            </span>
+            <div className="h-px w-12 bg-primary-container/30" />
+          </div>
+
+          <h1 className="font-headline text-3xl md:text-4xl text-on-surface uppercase tracking-tight font-bold">
+            {user} hasn&apos;t played {streamer}.
+          </h1>
+
+          <p className="font-body text-on-surface-variant text-base leading-relaxed max-w-md mx-auto">
+            We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced the full chess.com
+            archive for both accounts in that window — no games between the two of you turned up.
+          </p>
+
+          <a
+            href="/?game=chess"
+            className="inline-flex items-center gap-2 bg-primary-container hover:opacity-90 text-on-primary font-label font-bold uppercase px-8 py-4 tracking-[0.15em] transition-opacity"
+          >
+            New Search
+          </a>
         </div>
-
-        <h1 className="font-chess-display font-black italic uppercase text-4xl md:text-5xl tracking-tight mb-4">
-          {user} hasn&apos;t played {streamer}.
-        </h1>
-
-        <p className="text-chess-cream/60 text-base leading-relaxed mb-2">
-          We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced the full chess.com
-          archive for both accounts in that window — no games between the two of you turned up.
-        </p>
-        <p className="text-chess-cream/40 text-sm mb-10">
-          Double-check the usernames, or try a different streamer channel.
-        </p>
-
-        <a
-          href="/?game=chess"
-          className="inline-flex items-center gap-2 rounded-md px-6 py-3 font-bold text-sm text-[#0f1300] bg-chess-accent"
-        >
-          New Search
-        </a>
       </main>
     </div>
   );
 }
 
-// ── match card ───────────────────────────────────────────────────────────────
+// ── match row ────────────────────────────────────────────────────────────────
 
-function MatchCard({ match, platform }: { match: ChessMatch; platform: ChessPlatform }) {
+function MatchRow({ match, platform, index }: { match: ChessMatch; platform: ChessPlatform; index: number }) {
   const badge = resultBadge(match.result);
 
   return (
-    <div className="group bg-chess-surface hover:bg-chess-surface-2 transition-colors flex flex-col md:flex-row md:items-center gap-4 md:gap-6 border-l-2 border-chess-line hover:border-chess-accent px-6 py-5 rounded-r-md">
-      <span className={`shrink-0 self-start md:self-center border rounded-full px-3 py-1 font-mono text-[11px] tracking-[0.08em] uppercase ${badge.className}`}>
-        {badge.label}
-      </span>
-
-      <div className="flex-1 min-w-0">
-        <h3 className="font-chess-display italic font-bold text-lg text-chess-text truncate">
-          vs {match.opponent}
-        </h3>
-        <p className="font-mono text-[11px] text-chess-cream/40 tracking-wide">
-          {formatDate(match.played_at)} · {match.time_class}
-          {match.rated ? " · rated" : " · unrated"}
-        </p>
+    <div className={`group grid grid-cols-1 md:grid-cols-12 gap-y-4 md:gap-4 items-center px-6 py-5 border-t border-outline-variant bg-surface-dim hover:bg-primary-container/[0.03] transition-colors relative ${resultRail(match.result)}`}>
+      <div className="col-span-1 font-label text-on-surface-variant text-[12px] opacity-50 hidden md:block">
+        [{String(index + 1).padStart(3, "0")}]
       </div>
 
-      <div className="flex flex-col shrink-0">
-        <span className="text-[9px] text-chess-cream/40 uppercase tracking-[0.2em] font-mono">Timestamp</span>
-        <span className="text-xs font-bold uppercase tracking-widest text-chess-text font-mono">
-          {formatClock(match.timestamp)}
+      <div className="col-span-1 md:col-span-5 flex items-center gap-3 min-w-0">
+        <span className={`shrink-0 border px-2.5 py-1 font-label text-[10px] tracking-wider uppercase ${badge.className}`}>
+          {badge.label}
         </span>
+        <div className="min-w-0">
+          <h3 className="font-headline text-lg text-on-surface uppercase tracking-tight truncate">
+            vs {match.opponent}
+          </h3>
+          <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-wide">
+            {formatDate(match.played_at)} · {match.time_class} · {match.rated ? "rated" : "unrated"}
+          </p>
+        </div>
       </div>
 
-      <div className="flex gap-2 shrink-0">
+      <div className="col-span-1 md:col-span-2 md:text-right font-label text-primary-container font-bold text-sm">
+        {formatClock(match.timestamp)}
+      </div>
+
+      <div className="col-span-1 md:col-span-4 flex gap-2 md:justify-end">
         <a
           href={match.game_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="border border-chess-line hover:border-chess-accent text-chess-cream/70 hover:text-chess-text font-mono text-xs px-4 py-3 rounded-md transition-colors flex items-center"
+          className="border border-outline-variant hover:border-primary-container text-on-surface-variant hover:text-on-surface font-label text-xs px-4 py-3 transition-colors flex items-center"
         >
           View Game
         </a>
@@ -134,12 +140,12 @@ function MatchCard({ match, platform }: { match: ChessMatch; platform: ChessPlat
           href={vodDeepLink(platform, match.video_id, match.timestamp)}
           target="_blank"
           rel="noopener noreferrer"
-          className="bg-chess-accent hover:bg-chess-accent-bright text-[#0f1300] font-bold uppercase text-xs px-5 py-3 rounded-md tracking-[0.1em] transition-all flex items-center gap-2"
+          className="bg-primary-container hover:opacity-90 text-on-primary font-label font-black uppercase text-xs px-6 py-3 tracking-[0.1em] transition-opacity flex items-center gap-2"
         >
           Watch on {PLATFORM_LABEL[platform]}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform">
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
+          <span className="material-symbols-outlined text-[16px] group-hover:translate-x-1 transition-transform">
+            play_arrow
+          </span>
         </a>
       </div>
     </div>
@@ -168,59 +174,51 @@ export default function ChessResultsContent({ user, streamer, platform, initialD
   const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
-    <div className="bg-chess-bg min-h-screen">
-      <Header theme="chess" backHref="/?game=chess" backLabel="← New Search" />
+    <div className="min-h-screen flex flex-col">
+      <Header backHref="/?game=chess" backLabel="← New Search" />
 
-      <main className="pt-24 pb-12 px-6 max-w-5xl mx-auto">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="w-[7px] h-[7px] rounded-full bg-chess-accent chess-pulse-dot" />
-          <span className="font-mono text-[11px] tracking-[0.14em] uppercase text-chess-cream/50">
-            {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}
-          </span>
+      <main className="flex-grow w-full max-w-6xl mx-auto px-6 py-12 md:py-16">
+        <div className="mb-10 border-l-2 border-primary-container pl-6">
+          <div className="font-label text-primary text-[10px] uppercase tracking-[0.3em] mb-2 opacity-70">
+            Query Results · {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}
+          </div>
+          <h1 className="font-headline text-3xl md:text-5xl text-on-surface uppercase leading-none font-bold">
+            {user} <span className="text-primary-container">vs {streamer}</span>
+          </h1>
         </div>
 
-        <h1 className="font-chess-display font-black italic uppercase tracking-tight leading-none text-4xl md:text-6xl mb-10">
-          {user} <span className="text-chess-accent">vs {streamer}</span>
-        </h1>
+        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-surface-container-low border border-outline-variant text-on-surface-variant font-label text-[10px] uppercase tracking-widest">
+          <div className="col-span-1">ID</div>
+          <div className="col-span-5">Opponent</div>
+          <div className="col-span-2 text-right">Timestamp</div>
+          <div className="col-span-4 text-right">Action</div>
+        </div>
 
-        <div className="space-y-3">
+        <div className="flex flex-col border-x border-b border-outline-variant">
           {pageResults.map((match, i) => (
-            <MatchCard key={`${match.video_id}-${match.played_at}-${i}`} match={match} platform={platform} />
+            <MatchRow key={`${match.video_id}-${match.played_at}-${i}`} match={match} platform={platform} index={(page - 1) * PAGE_SIZE + i} />
           ))}
         </div>
 
         {totalPages > 1 && (
-          <div className="mt-12 flex items-center justify-between border-t border-chess-line pt-6">
-            <span className="font-mono text-[10px] text-chess-cream/40 uppercase tracking-[0.2em]">
-              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
-            </span>
-            <div className="flex gap-2">
+          <div className="mt-8 flex items-center justify-between">
+            <div className="flex items-center border border-outline-variant px-4 h-10 font-label text-[12px]">
+              PAGE <span className="text-primary-container mx-2">{String(page).padStart(2, "0")}</span> OF {String(totalPages).padStart(2, "0")}
+            </div>
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="w-10 h-10 rounded-md border border-chess-line flex items-center justify-center hover:bg-chess-surface-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-chess-cream/70"
+                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                ‹
+                <span className="material-symbols-outlined">chevron_left</span>
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-10 h-10 rounded-md font-bold flex items-center justify-center transition-colors font-mono text-sm ${
-                    p === page
-                      ? "bg-chess-accent text-[#0f1300]"
-                      : "border border-chess-line hover:bg-chess-surface-2 text-chess-cream/70"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="w-10 h-10 rounded-md border border-chess-line flex items-center justify-center hover:bg-chess-surface-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-chess-cream/70"
+                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                ›
+                <span className="material-symbols-outlined">chevron_right</span>
               </button>
             </div>
           </div>

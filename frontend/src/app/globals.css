@@ -1,15 +1,17 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800;900&family=Manrope:wght@200;300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600;1,700&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600..900;1,9..144,600..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Tactical grid — one consistent texture behind every page */
 body {
-  background-color: #0F1923;
-  background-image: radial-gradient(circle at 2px 2px, rgba(255, 70, 85, 0.05) 1px, transparent 0);
-  background-size: 32px 32px;
+  background-color: #051424;
+  background-image:
+    linear-gradient(rgba(255, 184, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 184, 0, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .material-symbols-outlined {
@@ -29,68 +31,159 @@ body {
   vertical-align: middle;
 }
 
-/* Scanning progress animation */
+.material-symbols-filled {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Kinetic scan-line sweep across a fill bar */
 @keyframes scan {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
-
 .scan-line {
   animation: scan 2s infinite linear;
 }
 
 /* Skeleton loading shimmer */
 .skeleton-pulse {
-  background: linear-gradient(90deg, #1c1c18 25%, #2b2a26 50%, #1c1c18 75%);
+  background: linear-gradient(90deg, #122131 25%, #1c2b3c 50%, #122131 75%);
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s infinite;
 }
-
 @keyframes skeleton-loading {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
-/* Clip-path utilities */
-.v-cut {
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+/* ── Tactical HUD component primitives ──────────────────────────────── */
+
+/* Corner brackets — the module's signature framing device */
+.tactical-border {
+  position: relative;
+  border: 1px solid #514532;
+}
+.tactical-border::before,
+.tactical-border::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+.tactical-border::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid #ffba20;
+  border-left: 2px solid #ffba20;
+}
+.tactical-border::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid #ffba20;
+  border-right: 2px solid #ffba20;
 }
 
-.v-cut-reverse {
-  clip-path: polygon(15px 0, 100% 0, 100% 100%, 0 100%, 0 15px);
+/* Clipped corner — used sparingly on primary CTAs */
+.clip-corner {
+  clip-path: polygon(10px 0%, 100% 0%, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0% 100%, 0% 10px);
 }
 
-/* Vanguard grid overlay */
-.vanguard-grid {
-  background-image:
-    linear-gradient(rgba(91, 64, 63, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 64, 63, 0.05) 1px, transparent 1px);
-  background-size: 40px 40px;
+/* Vertical sweep across a card — reads as an active scan in progress */
+.scanline-sweep {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 184, 0, 0.12);
+  position: absolute;
+  top: 0;
+  left: 0;
+  animation: scanline-sweep 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes scanline-sweep {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
 }
 
-/* Chess.com board-square grid overlay (chess sub-brand equivalent of vanguard-grid) */
-.chess-grid {
-  background-image:
-    linear-gradient(rgba(238, 238, 210, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(238, 238, 210, 0.05) 1px, transparent 1px);
-  background-size: 44px 44px;
+/* Soft full-page sweep — used on the scanning page behind the content */
+.page-scanline {
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(0deg, rgba(255, 184, 0, 0) 0%, rgba(255, 184, 0, 0.06) 50%, rgba(255, 184, 0, 0) 100%);
+  position: fixed;
+  top: -100px;
+  left: 0;
+  animation: page-scanline 4s linear infinite;
+  pointer-events: none;
+}
+@keyframes page-scanline {
+  0%   { top: -100px; }
+  100% { top: 100vh; }
 }
 
-/* Pulsing indicator dot, chess-accent flavored (mirrors the tertiary pulse used on Valorant pages) */
-@keyframes chess-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(129, 182, 76, 0.45); }
-  70%  { box-shadow: 0 0 0 8px rgba(129, 182, 76, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(129, 182, 76, 0); }
+/* Bottom-border input fields with an amber focus notch */
+.input-accent {
+  border-bottom: 2px solid #45464d;
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.chess-pulse-dot {
-  animation: chess-pulse 1.8s infinite;
+.input-accent:focus-within {
+  border-color: #ffba20;
+  background: rgba(255, 184, 0, 0.03);
+}
+.corner-notch {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #ffba20;
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+  top: 0;
+  right: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.input-accent:focus-within .corner-notch {
+  opacity: 1;
+}
+
+/* Segmented tactical progress bar */
+.progress-segment {
+  height: 100%;
+  flex: 1;
+  margin-right: 3px;
+  background-color: #1c2b3c;
+  transition: background-color 0.3s ease;
+}
+.progress-segment:last-child {
+  margin-right: 0;
+}
+.progress-segment.active {
+  background-color: #ffb800;
+  box-shadow: 0 0 10px rgba(255, 184, 0, 0.5);
+}
+
+/* Vertical accent rail — used on data-grid rows and cards to denote status */
+.status-rail-left {
+  border-left: 2px solid #ffb800;
+}
+
+/* Very subtle text-flicker for "live" headlines — fires briefly, not constantly */
+@keyframes glitch {
+  0%  { text-shadow: 2px 0 #ffb800, -2px 0 #6dd3ff; }
+  2%  { text-shadow: -2px 0 #ffb800, 2px 0 #6dd3ff; }
+  4%  { text-shadow: 0 0 0; }
+  100% { text-shadow: 0 0 0; }
+}
+.glitch-text {
+  animation: glitch 3s infinite;
 }
 
 /* Remove default input autofill background */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #e6e2db;
-  -webkit-box-shadow: 0 0 0px 1000px #1c1c18 inset;
+  -webkit-text-fill-color: #d4e4fa;
+  -webkit-box-shadow: 0 0 0px 1000px #0d1c2d inset;
   transition: background-color 5000s ease-in-out 0s;
 }

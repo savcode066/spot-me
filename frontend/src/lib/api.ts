@@ -145,3 +145,78 @@ export async function searchChessMatchup({
 
   return res.json();
 }
+
+// ── Valorant matchup search ─────────────────────────────────────────────────
+// Same shape as the chess.com search above — one backend route per VOD
+// platform, dispatched here.
+
+export interface ValorantMatch {
+  video_id: string;
+  video_name: string;
+  timestamp: number;
+  played_at: number;
+  map: string;
+  mode: string;
+  result: string;
+  teammates: boolean;
+  viewer_agent: string;
+  streamer_agent: string;
+  match_url: string;
+}
+
+export interface ValorantMatchupResponse {
+  results: ValorantMatch[];
+  total: number;
+  vods_scanned: number;
+}
+
+export interface ValorantSearchParams {
+  platform: ChessPlatform;
+  viewerRiotId: string;
+  streamerRiotId: string;
+  channel: string;
+}
+
+const VALORANT_ENDPOINT: Record<ChessPlatform, string> = {
+  twitch: "/api/valorant/search",
+  kick: "/api/valorant/kick/search",
+  youtube: "/api/valorant/youtube/search",
+};
+
+const VALORANT_CHANNEL_FIELD: Record<ChessPlatform, string> = {
+  twitch: "streamer_twitch_username",
+  kick: "streamer_kick_username",
+  youtube: "streamer_youtube_channel",
+};
+
+export async function searchValorantMatchup({
+  platform,
+  viewerRiotId,
+  streamerRiotId,
+  channel,
+}: ValorantSearchParams): Promise<ValorantMatchupResponse> {
+  const res = await fetch(`${apiBase()}${VALORANT_ENDPOINT[platform]}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Don't cache — matchup results depend on the streamer's live VOD list.
+    cache: "no-store",
+    body: JSON.stringify({
+      viewer_riot_id: viewerRiotId,
+      streamer_riot_id: streamerRiotId,
+      [VALORANT_CHANNEL_FIELD[platform]]: channel,
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = `Valorant search failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      // Response wasn't JSON — keep the generic message.
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}

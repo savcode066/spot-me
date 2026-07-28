@@ -34,16 +34,16 @@ export default async function ChessResultsPage({
 
   if (apiError) {
     return (
-      <main className="min-h-screen bg-chess-bg flex flex-col items-center justify-center p-6 text-center">
-        <span className="font-mono text-[11px] tracking-[0.2em] uppercase text-[#c65b4a] mb-4">
-          Archive Sync Failed
+      <main className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <span className="font-label text-[11px] tracking-[0.2em] uppercase text-error mb-4">
+          Search Failed
         </span>
-        <p className="font-chess-display italic text-2xl md:text-3xl text-chess-text max-w-lg mb-6">
+        <p className="font-headline text-2xl md:text-3xl text-on-surface max-w-lg mb-6">
           {apiError}
         </p>
         <a
           href="/?game=chess"
-          className="inline-flex items-center gap-2 rounded-md px-6 py-3 font-bold text-sm text-[#0f1300] bg-chess-accent"
+          className="inline-flex items-center gap-2 px-6 py-3 font-label font-bold text-sm text-on-primary bg-primary-container"
         >
           Try Again
         </a>
