@@ -17,7 +17,7 @@ const PLATFORMS: { value: ChessPlatform; label: string }[] = [
   { value: "youtube", label: "YouTube" },
 ];
 
-const COPY: Record<Game, { you: string; streamer: string }> = {
+const COPY: Record<Game, { you: string; streamer: string; idPlaceholder?: string }> = {
   chess: {
     you: "Your Chess.com Username",
     streamer: "Streamer's Chess.com Username",
@@ -25,6 +25,10 @@ const COPY: Record<Game, { you: string; streamer: string }> = {
   valorant: {
     you: "Your Riot ID",
     streamer: "Streamer's Riot ID",
+    // Riot IDs are Name#Tag — the backend rejects a bare username, so this
+    // is the one field that still needs a hint. Chess usernames have no
+    // such format requirement, so they stay placeholder-free.
+    idPlaceholder: "Name#Tag",
   },
 };
 
@@ -133,11 +137,12 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
               type="text"
               value={you}
               onChange={(e) => setYou(e.target.value)}
+              placeholder={c.idPlaceholder}
               autoComplete="off"
               spellCheck={false}
               maxLength={50}
               required
-              className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
+              className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
             />
             <div className="corner-notch" />
           </div>
@@ -154,11 +159,12 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
                 type="text"
                 value={streamer}
                 onChange={(e) => setStreamer(e.target.value)}
+                placeholder={c.idPlaceholder}
                 autoComplete="off"
                 spellCheck={false}
                 maxLength={50}
                 required
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
+                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
               />
               <div className="corner-notch" />
             </div>
