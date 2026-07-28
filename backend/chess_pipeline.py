@@ -45,10 +45,18 @@ _DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
 # Twitch — auth + VOD listing
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _twitch_client_id() -> str:
+    return os.environ["TWITCH_CLIENT_ID"].strip()
+
+
+def _twitch_client_secret() -> str:
+    return os.environ["TWITCH_CLIENT_SECRET"].strip()
+
+
 def _get_twitch_token() -> str:
     resp = requests.post(TWITCH_TOKEN_URL, params={
-        "client_id":     os.environ["TWITCH_CLIENT_ID"],
-        "client_secret": os.environ["TWITCH_CLIENT_SECRET"],
+        "client_id":     _twitch_client_id(),
+        "client_secret": _twitch_client_secret(),
         "grant_type":    "client_credentials",
     }, timeout=10)
     resp.raise_for_status()
@@ -57,7 +65,7 @@ def _get_twitch_token() -> str:
 
 def _twitch_headers(token: str) -> dict:
     return {
-        "Client-ID":     os.environ["TWITCH_CLIENT_ID"],
+        "Client-ID":     _twitch_client_id(),
         "Authorization": f"Bearer {token}",
     }
 

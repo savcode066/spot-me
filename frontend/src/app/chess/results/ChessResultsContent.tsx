@@ -59,7 +59,7 @@ function resultBadge(result: string): { label: string; className: string } {
 function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: string; vodsScanned: number }) {
   return (
     <div className="min-h-screen bg-chess-bg text-chess-text chess-grid">
-      <Header theme="chess" backHref="/chess" backLabel="← New Search" />
+      <Header theme="chess" backHref="/?game=chess" backLabel="← New Search" />
 
       <main className="pt-32 pb-16 px-6 max-w-2xl mx-auto text-center">
         <div className="flex items-center justify-center gap-4 mb-6">
@@ -83,7 +83,7 @@ function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: s
         </p>
 
         <a
-          href="/chess"
+          href="/?game=chess"
           className="inline-flex items-center gap-2 rounded-md px-6 py-3 font-bold text-sm text-[#0f1300] bg-chess-accent"
         >
           New Search
@@ -169,7 +169,7 @@ export default function ChessResultsContent({ user, streamer, platform, initialD
 
   return (
     <div className="bg-chess-bg min-h-screen">
-      <Header theme="chess" backHref="/chess" backLabel="← New Search" />
+      <Header theme="chess" backHref="/?game=chess" backLabel="← New Search" />
 
       <main className="pt-24 pb-12 px-6 max-w-5xl mx-auto">
         <div className="mb-4 flex items-center gap-3">

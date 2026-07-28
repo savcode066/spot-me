@@ -15,7 +15,7 @@ export default async function ChessResultsPage({
   const isValidPlatform = VALID_PLATFORMS.includes(platform as ChessPlatform);
 
   if (!user.trim() || !streamer.trim() || !channel.trim() || !isValidPlatform) {
-    redirect("/chess");
+    redirect("/?game=chess");
   }
 
   let data: ChessMatchupResponse = { results: [], total: 0, vods_scanned: 0 };
@@ -42,7 +42,7 @@ export default async function ChessResultsPage({
           {apiError}
         </p>
         <a
-          href="/chess"
+          href="/?game=chess"
           className="inline-flex items-center gap-2 rounded-md px-6 py-3 font-bold text-sm text-[#0f1300] bg-chess-accent"
         >
           Try Again

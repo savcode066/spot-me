@@ -15,7 +15,7 @@ export default async function ChessScanningPage({
 
   const isValidPlatform = VALID_PLATFORMS.includes(platform as ChessPlatform);
   if (!user.trim() || !streamer.trim() || !channel.trim() || !isValidPlatform) {
-    redirect("/chess");
+    redirect("/?game=chess");
   }
 
   return (

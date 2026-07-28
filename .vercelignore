@@ -1,0 +1,7 @@
+node_modules
+.next
+easy_env
+__pycache__
+.git
+*.pyc
+backend/__pycache__

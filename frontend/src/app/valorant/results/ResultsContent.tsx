@@ -43,7 +43,7 @@ function NoResults({
     <div className="bg-[#0F1923] text-on-background font-body min-h-screen flex flex-col overflow-hidden">
       <div className="fixed inset-0 vanguard-grid pointer-events-none" />
 
-      <Header backHref="/" />
+      <Header backHref="/?game=valorant" />
 
       <main className="flex-grow flex items-center justify-center relative z-10 px-4 pt-24">
         <div className="w-full max-w-2xl">
@@ -197,7 +197,7 @@ export default function ResultsContent({ username, initialData }: Props) {
         showSearch
         query={username}
         onSearch={handleRescan}
-        backHref="/"
+        backHref="/?game=valorant"
       />
 
       <main className="pt-24 pb-12 px-6 max-w-7xl mx-auto">

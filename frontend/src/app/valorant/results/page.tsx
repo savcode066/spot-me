@@ -11,7 +11,7 @@ export default async function ResultsPage({
   searchParams: Promise<{ username?: string }>;
 }) {
   const { username = "" } = await searchParams;
-  if (!username.trim()) redirect("/valorant");
+  if (!username.trim()) redirect("/?game=valorant");
 
   let data: SearchResponse = {
     username,

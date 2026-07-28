@@ -31,7 +31,7 @@ export default function Header({
   onSearch,
   theme = "valorant",
   backHref,
-  backLabel = "← Choose Game",
+  backLabel = "← New Search",
 }: HeaderProps) {
   const [value, setValue] = useState(query);
   const t = THEME[theme];
