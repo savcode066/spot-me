@@ -82,8 +82,18 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Choose Game */}
           <div className="relative">
-            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 block tracking-wider">
+            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 flex items-center gap-1.5 tracking-wider">
               Choose Game
+              {game === "valorant" && (
+                <span className="relative group/warn inline-flex">
+                  <span className="material-symbols-outlined material-symbols-filled text-[14px] leading-none text-[#ffba20] normal-case cursor-help">
+                    warning
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/warn:block whitespace-nowrap bg-surface-container-high border border-outline-variant text-on-surface text-[10px] font-label normal-case tracking-normal px-2.5 py-1.5 z-20">
+                    Experimental — may not work as expected
+                  </span>
+                </span>
+              )}
             </label>
             <div className="input-accent relative">
               <select
