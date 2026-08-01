@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
 import type { ChessPlatform } from "@/lib/api";
 
 interface Props {
@@ -18,38 +17,22 @@ const PLATFORM_LABEL: Record<ChessPlatform, string> = {
   youtube: "YouTube",
 };
 
-const SKELETON_CARDS = ["♞", "♟", "♛"];
+// Cosmetic progress animation — the real fetch happens on /chess/results
+// after this redirects there, so duration/count here is flavor, not telemetry.
+const SCAN_DURATION_MS = 3000;
 
-const FACTS = [
-  "The first eSports tournament was held in 1972 at Stanford University.",
-  "Nintendo was founded in 1889 as a playing card company.",
-  "The highest possible score in Pac-Man is 3,333,360 points.",
-  "Space Invaders was so popular it caused a coin shortage in Japan.",
-  "The PlayStation 2 is the best-selling game console of all time.",
-  "Chess has more possible game states than atoms in the observable universe.",
-];
-
-// Client shell for the chess scanning page — cosmetic progress animation
-// (mirrors the Valorant ScanningContent) before handing off to /chess/results,
-// which does the real fetch.
 export default function ChessScanningContent({ user, streamer, platform, channel }: Props) {
   const router = useRouter();
   const [progress, setProgress] = useState(0);
-  const [factIndex, setFactIndex] = useState(0);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    const start = Date.now();
     intervalRef.current = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 88) {
-          clearInterval(intervalRef.current!);
-          return 88;
-        }
-        return Math.min(88, prev + Math.random() * 14 + 2);
-      });
-    }, 280);
+      setProgress(Math.min(96, ((Date.now() - start) / SCAN_DURATION_MS) * 100));
+    }, 100);
 
     timeoutRef.current = setTimeout(async () => {
       clearInterval(intervalRef.current!);
@@ -57,7 +40,7 @@ export default function ChessScanningContent({ user, streamer, platform, channel
       await new Promise((r) => setTimeout(r, 400));
       const params = new URLSearchParams({ user, streamer, platform, channel });
       router.replace(`/chess/results?${params.toString()}`);
-    }, 3000);
+    }, SCAN_DURATION_MS);
 
     return () => {
       clearInterval(intervalRef.current!);
@@ -65,77 +48,41 @@ export default function ChessScanningContent({ user, streamer, platform, channel
     };
   }, [user, streamer, platform, channel, router]);
 
-  useEffect(() => {
-    const id = setInterval(() => setFactIndex((i) => (i + 1) % FACTS.length), 6000);
-    return () => clearInterval(id);
-  }, []);
+  const gamesChecked = Math.round((progress / 100) * 2400);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header minimal />
-      <div className="page-scanline z-10" />
+    <main className="min-h-screen flex items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-[560px] card-frame clip-18">
+        <div className="card-panel clip-17 p-10 md:p-12 text-center">
+          <div className="alert-wash" />
 
-      <main className="relative z-20 flex-grow w-full flex flex-col items-center justify-center px-6 py-12">
-        <div className="w-full max-w-2xl flex flex-col gap-8">
-          <div className="space-y-4">
-            <div className="flex justify-between items-end border-b border-outline-variant pb-4">
-              <h1 className="font-headline text-2xl md:text-4xl text-on-surface uppercase tracking-tight glitch-text">
-                Scanning {PLATFORM_LABEL[platform]} VODs...
-              </h1>
-              <div className="hidden md:block text-right shrink-0 ml-6">
-                <p className="font-label font-bold text-2xl text-on-surface">{Math.round(progress)}%</p>
-              </div>
-            </div>
-
-            <div className="relative h-2 w-full bg-surface-container-high overflow-hidden rounded-full">
-              <div
-                className="absolute top-0 left-0 h-full bg-primary-container transition-all duration-500 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-              <div className="absolute top-0 left-0 h-full w-24 bg-gradient-to-r from-transparent via-white/40 to-transparent scan-line" />
-            </div>
-
-            <div className="flex justify-end items-center gap-2">
-              <span className="w-2 h-2 bg-primary-container animate-pulse inline-block rounded-full" />
-              <span className="font-label text-[10px] uppercase tracking-[0.2em] text-primary font-bold">
-                Matching {user} vs {streamer}
-              </span>
-            </div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-twitch/[0.16] px-3.5 py-1.5 mb-6">
+            <span className="w-1.5 h-1.5 rounded-full bg-alert" />
+            <span className="font-label text-[11px] tracking-[0.08em] text-twitch-ink uppercase">
+              Scanning
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full opacity-40">
-            {SKELETON_CARDS.map((glyph, i) => (
-              <div key={i} className="status-rail-left bg-surface-container-low p-6 space-y-4 relative">
-                <div className="flex justify-between">
-                  <div className="h-3 w-16 skeleton-pulse" />
-                  <div className="h-3 w-8 skeleton-pulse" />
-                </div>
-                <div className="h-8 w-full skeleton-pulse" />
-                <div className="space-y-2">
-                  <div className="h-2 w-full skeleton-pulse opacity-50" />
-                  <div className="h-2 w-3/4 skeleton-pulse opacity-50" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 text-4xl text-on-surface-variant/20 select-none">
-                  {glyph}
-                </div>
-              </div>
-            ))}
+          <h1 className="font-headline font-bold text-2xl text-ink uppercase mb-2">
+            Cross-referencing VODs
+          </h1>
+          <p className="font-body text-sm text-ink-dim mb-7">
+            Matching {user} against {streamer}&apos;s {PLATFORM_LABEL[platform]} archive
+          </p>
+
+          <div className="h-2 bg-track rounded-full overflow-hidden mb-3.5">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-ink-soft to-steel transition-[width] duration-300 ease-out"
+              style={{ width: `${progress}%` }}
+            />
           </div>
 
-          {/* Real delight, not fake telemetry — a bit of gaming trivia while we wait */}
-          <div className="w-full bg-surface-container-low border-l-4 border-primary-container p-6 relative">
-            <div className="absolute -top-3 -left-1 font-label text-[10px] bg-primary-container text-on-primary px-2 py-0.5 uppercase tracking-wider">
-              While You Wait
-            </div>
-            <div className="flex items-start gap-4">
-              <span className="material-symbols-outlined material-symbols-filled text-primary mt-1">info</span>
-              <p className="font-body text-on-surface italic transition-opacity duration-500">
-                {FACTS[factIndex]}
-              </p>
-            </div>
+          <div className="flex justify-between font-mono text-xs text-ink-faint">
+            <span>{gamesChecked.toLocaleString()} games checked</span>
+            <span>{Math.round(progress)}%</span>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }

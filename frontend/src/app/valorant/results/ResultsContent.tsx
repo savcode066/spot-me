@@ -40,25 +40,22 @@ function vodDeepLink(platform: ChessPlatform, videoId: string, seconds: number):
     case "youtube":
       return `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
     case "kick":
-      // Kick has no documented seek-by-timestamp query param — this opens
-      // the right VOD; the timestamp is shown alongside for manual seeking.
       return `https://kick.com/video/${videoId}`;
   }
 }
 
-function resultRail(result: string): string {
-  if (result === "win") return "status-rail-left";
-  if (result === "loss") return "border-l-2 border-error/60";
-  return "border-l-2 border-outline-variant";
-}
-
-function resultBadge(result: string): { label: string; className: string } {
-  if (result === "win") return { label: "Win", className: "bg-primary-container/15 text-primary-container border-primary-container/30" };
-  if (result === "loss") return { label: "Loss", className: "bg-error/15 text-error border-error/30" };
-  return { label: "Unknown", className: "bg-white/10 text-on-surface-variant border-white/20" };
+// Result → the app's rarity-ladder color language, doubling as a CS2-style
+// significance rail on each row. Literal class strings (not built via
+// template interpolation) so Tailwind's JIT scanner can see them statically.
+function resultStyle(result: string): { label: string; text: string; rail: string } {
+  if (result === "win") return { label: "WIN", text: "text-steel", rail: "bg-steel" };
+  if (result === "loss") return { label: "LOSS", text: "text-alert", rail: "bg-alert" };
+  return { label: "UNKNOWN", text: "text-tier-routine", rail: "bg-tier-routine" };
 }
 
 // ── empty state ──────────────────────────────────────────────────────────────
+// Not covered by the design handoff (flagged there as "not designed yet") —
+// extrapolated in the same card-shell visual language as landing/scanning.
 
 function NoMatchups({
   viewer,
@@ -71,33 +68,31 @@ function NoMatchups({
 }) {
   return (
     <div className="min-h-screen flex flex-col">
-      <Header backHref="/?game=valorant" backLabel="← New Search" />
+      <Header backHref="/?game=valorant" />
 
       <main className="flex-grow flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-xl text-center space-y-6">
-          <div className="flex items-center justify-center gap-4">
-            <div className="h-px w-12 bg-primary-container/30" />
-            <span className="font-label text-[11px] text-primary tracking-[0.3em] uppercase">
+        <div className="w-full max-w-[560px] card-frame clip-18">
+          <div className="card-panel clip-17 p-10 text-center">
+            <div className="alert-wash" />
+
+            <div className="font-label text-[11px] tracking-[0.2em] text-ink-faint uppercase mb-3">
               No Matchups Found
-            </span>
-            <div className="h-px w-12 bg-primary-container/30" />
+            </div>
+            <h1 className="font-headline font-bold text-2xl text-ink uppercase mb-3">
+              {viewer} hasn&apos;t played with {streamer}.
+            </h1>
+            <p className="font-body text-sm text-ink-dim leading-relaxed mb-7">
+              We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced match
+              history for both accounts in that window — no shared games turned up.
+            </p>
+
+            <a
+              href="/?game=valorant"
+              className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
+            >
+              New Search
+            </a>
           </div>
-
-          <h1 className="font-headline text-3xl md:text-4xl text-on-surface uppercase tracking-tight font-bold">
-            {viewer} hasn&apos;t played with {streamer}.
-          </h1>
-
-          <p className="font-body text-on-surface-variant text-base leading-relaxed max-w-md mx-auto">
-            We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced match
-            history for both accounts in that window — no shared games turned up.
-          </p>
-
-          <a
-            href="/?game=valorant"
-            className="inline-flex items-center gap-2 bg-primary-container hover:opacity-90 text-on-primary font-label font-bold uppercase px-8 py-4 tracking-[0.15em] transition-opacity"
-          >
-            New Search
-          </a>
         </div>
       </main>
     </div>
@@ -106,54 +101,47 @@ function NoMatchups({
 
 // ── match row ────────────────────────────────────────────────────────────────
 
-function MatchRow({ match, platform, index }: { match: ValorantMatch; platform: ChessPlatform; index: number }) {
-  const badge = resultBadge(match.result);
+function MatchRow({ match, platform }: { match: ValorantMatch; platform: ChessPlatform }) {
+  const style = resultStyle(match.result);
 
   return (
-    <div className={`group grid grid-cols-1 md:grid-cols-12 gap-y-4 md:gap-4 items-center px-6 py-5 border-t border-outline-variant bg-surface-dim hover:bg-primary-container/[0.03] transition-colors relative ${resultRail(match.result)}`}>
-      <div className="col-span-1 font-label text-on-surface-variant text-[12px] opacity-50 hidden md:block">
-        [{String(index + 1).padStart(3, "0")}]
+    <div className="relative clip-10 bg-panel px-5 py-4 flex flex-wrap md:flex-nowrap items-center gap-4">
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${style.rail}`} />
+
+      <div className={`w-14 shrink-0 font-headline font-bold text-[13px] ${style.text}`}>
+        {style.label}
       </div>
 
-      <div className="col-span-1 md:col-span-5 flex items-center gap-3 min-w-0">
-        <span className={`shrink-0 border px-2.5 py-1 font-label text-[10px] tracking-wider uppercase ${badge.className}`}>
-          {badge.label}
-        </span>
-        <div className="min-w-0">
-          <h3 className="font-headline text-lg text-on-surface uppercase tracking-tight truncate">
-            {match.map} · {match.teammates ? "with" : "vs"} {match.streamer_agent}
-          </h3>
-          <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-wide">
-            {formatDate(match.played_at)} · {match.mode} · playing {match.viewer_agent}
-          </p>
+      <div className="flex-1 min-w-0 order-1 md:order-none basis-full md:basis-auto">
+        <div className="font-body font-semibold text-sm text-ink truncate">
+          {match.teammates ? "with" : "vs"} {match.streamer_agent} · {match.map}
+        </div>
+        <div className="font-mono text-xs text-ink-faint-alt mt-0.5">
+          {formatDate(match.played_at)} · {match.mode} · playing {match.viewer_agent}
         </div>
       </div>
 
-      <div className="col-span-1 md:col-span-2 md:text-right font-label text-primary-container font-bold text-sm">
+      <div className="font-mono font-semibold text-[13px] text-steel shrink-0">
         {formatClock(match.timestamp)}
       </div>
 
-      <div className="col-span-1 md:col-span-4 flex gap-2 md:justify-end">
-        <a
-          href={match.match_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="border border-outline-variant hover:border-primary-container text-on-surface-variant hover:text-on-surface font-label text-xs px-4 py-3 transition-colors flex items-center"
-        >
-          View Match
-        </a>
-        <a
-          href={vodDeepLink(platform, match.video_id, match.timestamp)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-primary-container hover:opacity-90 text-on-primary font-label font-black uppercase text-xs px-6 py-3 tracking-[0.1em] transition-opacity flex items-center gap-2"
-        >
-          Watch on {PLATFORM_LABEL[platform]}
-          <span className="material-symbols-outlined text-[16px] group-hover:translate-x-1 transition-transform">
-            play_arrow
-          </span>
-        </a>
-      </div>
+      <a
+        href={match.match_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0 font-mono text-[11px] text-ink-faint hover:text-ink transition-colors"
+      >
+        View Match ↗
+      </a>
+
+      <a
+        href={vodDeepLink(platform, match.video_id, match.timestamp)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0 rounded-full bg-twitch/[0.2] text-twitch-ink font-headline font-semibold text-xs px-3.5 py-2.5 hover:bg-twitch/[0.3] transition-colors"
+      >
+        Watch on {PLATFORM_LABEL[platform]}
+      </a>
     </div>
   );
 }
@@ -168,7 +156,7 @@ interface Props {
   initialData: ValorantMatchupResponse;
 }
 
-export default function ResultsContent({ viewer, streamer, platform, initialData }: Props) {
+export default function ResultsContent({ viewer, streamer, platform, channel, initialData }: Props) {
   const [page, setPage] = useState(1);
   const { results, total, vods_scanned } = initialData;
 
@@ -178,53 +166,56 @@ export default function ResultsContent({ viewer, streamer, platform, initialData
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const pad = (n: number) => String(n).padStart(2, "0");
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header backHref="/?game=valorant" backLabel="← New Search" />
+      <Header backHref="/?game=valorant" />
 
-      <main className="flex-grow w-full max-w-6xl mx-auto px-6 py-12 md:py-16">
-        <div className="mb-10 border-l-2 border-primary-container pl-6">
-          <div className="font-label text-primary text-[10px] uppercase tracking-[0.3em] mb-2 opacity-70">
-            Query Results · {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}
+      <main className="flex-grow w-full max-w-3xl mx-auto px-6 py-10 md:py-14">
+        <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
+          <div>
+            <div className="font-mono text-[11px] tracking-[0.1em] text-ink-faint uppercase mb-1.5">
+              {viewer} vs
+            </div>
+            <h1 className="font-headline font-bold text-2xl md:text-[26px] text-ink uppercase">
+              {total} shared match{total === 1 ? "" : "es"}
+            </h1>
+            <p className="font-mono text-[11px] text-ink-faint mt-1">
+              {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}
+            </p>
           </div>
-          <h1 className="font-headline text-3xl md:text-5xl text-on-surface uppercase leading-none font-bold">
-            {viewer} <span className="text-primary-container">vs {streamer}</span>
-          </h1>
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-discord/[0.18] px-3.5 py-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-discord" />
+            <span className="font-mono font-semibold text-xs text-discord-ink">{channel}</span>
+          </div>
         </div>
 
-        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-surface-container-low border border-outline-variant text-on-surface-variant font-label text-[10px] uppercase tracking-widest">
-          <div className="col-span-1">ID</div>
-          <div className="col-span-5">Map / Agent</div>
-          <div className="col-span-2 text-right">Timestamp</div>
-          <div className="col-span-4 text-right">Action</div>
-        </div>
-
-        <div className="flex flex-col border-x border-b border-outline-variant">
+        <div className="flex flex-col gap-2.5">
           {pageResults.map((match, i) => (
-            <MatchRow key={`${match.video_id}-${match.played_at}-${i}`} match={match} platform={platform} index={(page - 1) * PAGE_SIZE + i} />
+            <MatchRow key={`${match.video_id}-${match.played_at}-${i}`} match={match} platform={platform} />
           ))}
         </div>
 
         {totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-between">
-            <div className="flex items-center border border-outline-variant px-4 h-10 font-label text-[12px]">
-              PAGE <span className="text-primary-container mx-2">{String(page).padStart(2, "0")}</span> OF {String(totalPages).padStart(2, "0")}
+          <div className="mt-7 flex items-center justify-between">
+            <div className="font-mono text-xs text-ink-faint">
+              Page <span className="text-steel">{pad(page)}</span> of {pad(totalPages)}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-9 h-9 rounded-full bg-input flex items-center justify-center text-ink-muted hover:text-ink hover:bg-input-alt transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-mono"
               >
-                <span className="material-symbols-outlined">chevron_left</span>
+                ‹
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="w-10 h-10 flex items-center justify-center border border-outline-variant text-on-surface-variant hover:border-primary-container hover:text-primary-container transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                className="w-9 h-9 rounded-full bg-input flex items-center justify-center text-ink-muted hover:text-ink hover:bg-input-alt transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-mono"
               >
-                <span className="material-symbols-outlined">chevron_right</span>
+                ›
               </button>
             </div>
           </div>

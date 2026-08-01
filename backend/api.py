@@ -14,6 +14,9 @@ Endpoints:
   POST /api/valorant/search         — Valorant matchups mapped to Twitch VOD timestamps
   POST /api/valorant/kick/search    — Valorant matchups mapped to Kick VOD timestamps
   POST /api/valorant/youtube/search — Valorant matchups mapped to YouTube Live timestamps
+  POST /api/dota2/search            — Dota 2 matchups mapped to Twitch VOD timestamps
+  POST /api/dota2/kick/search       — Dota 2 matchups mapped to Kick VOD timestamps
+  POST /api/dota2/youtube/search    — Dota 2 matchups mapped to YouTube Live timestamps
 
 Run locally:
   cd backend
@@ -31,6 +34,7 @@ import chess_pipeline
 import kick_pipeline
 import youtube_pipeline
 import valorant_pipeline
+import dota2_pipeline
 from curl_cffi.requests.exceptions import RequestException as CurlRequestException
 
 from fastapi import FastAPI, HTTPException, Request
@@ -198,6 +202,64 @@ class YoutubeValorantSearchResponse(BaseModel):
     streamer_riot_id: str
     streamer_youtube_channel: str
     results: list[ValorantMatch]
+    total: int
+    vods_scanned: int
+
+
+class Dota2SearchRequest(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_twitch_username: str
+
+
+class Dota2Match(BaseModel):
+    video_id: str
+    video_name: str
+    timestamp: int
+    played_at: int
+    duration: int
+    result: str
+    teammates: bool
+    viewer_hero: str
+    streamer_hero: str
+    match_url: str
+
+
+class Dota2SearchResponse(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_twitch_username: str
+    results: list[Dota2Match]
+    total: int
+    vods_scanned: int
+
+
+class KickDota2SearchRequest(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_kick_username: str
+
+
+class KickDota2SearchResponse(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_kick_username: str
+    results: list[Dota2Match]
+    total: int
+    vods_scanned: int
+
+
+class YoutubeDota2SearchRequest(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_youtube_channel: str
+
+
+class YoutubeDota2SearchResponse(BaseModel):
+    viewer_dota_id: str
+    streamer_dota_id: str
+    streamer_youtube_channel: str
+    results: list[Dota2Match]
     total: int
     vods_scanned: int
 
@@ -436,6 +498,115 @@ def youtube_valorant_search(request: Request, body: YoutubeValorantSearchRequest
     return YoutubeValorantSearchResponse(
         viewer_riot_id=viewer,
         streamer_riot_id=streamer,
+        streamer_youtube_channel=youtube,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+def _dota2_http_error(exc: ValueError, channel_kind: str, channel: str, viewer_dota_id: str) -> HTTPException:
+    reason = str(exc)
+    if reason == f"{channel_kind}_channel_not_found":
+        return HTTPException(status_code=404, detail=f"{_CHANNEL_KIND_LABEL[channel_kind]} channel not found: {channel}")
+    if reason == "dota2_invalid_id":
+        return HTTPException(status_code=400, detail="Dota 2 IDs must be numeric Steam32 account IDs (the \"Friend ID\" shown in your Dota 2 profile)")
+    if reason == "dota2_account_not_found":
+        return HTTPException(status_code=404, detail=f"Dota 2 account not found: {viewer_dota_id}")
+    if reason == "dota2_rate_limited":
+        return HTTPException(status_code=429, detail="Dota 2 match data API rate limit reached; try again shortly.")
+    return HTTPException(status_code=502, detail=reason)
+
+
+@app.post("/api/dota2/search", response_model=Dota2SearchResponse)
+@limiter.limit("5/minute")
+def dota2_search(request: Request, body: Dota2SearchRequest):
+    """
+    On-demand: finds every Dota 2 match between two Steam32 account IDs and
+    maps each one onto the streamer's Twitch VOD + in-VOD timestamp.
+    """
+    viewer = body.viewer_dota_id.strip()
+    streamer = body.streamer_dota_id.strip()
+    twitch = body.streamer_twitch_username.strip()
+
+    if not (viewer and streamer and twitch):
+        raise HTTPException(status_code=400, detail="Both Dota 2 IDs and the streamer's Twitch username are required")
+
+    try:
+        outcome = dota2_pipeline.run_dota2_pipeline(viewer, streamer, twitch)
+    except ValueError as exc:
+        raise _dota2_http_error(exc, "twitch", twitch, viewer)
+    except requests.RequestException as exc:
+        log.exception(f"Dota 2 pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [Dota2Match(**r) for r in outcome["results"]]
+
+    return Dota2SearchResponse(
+        viewer_dota_id=viewer,
+        streamer_dota_id=streamer,
+        streamer_twitch_username=twitch,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+@app.post("/api/dota2/kick/search", response_model=KickDota2SearchResponse)
+@limiter.limit("5/minute")
+def kick_dota2_search(request: Request, body: KickDota2SearchRequest):
+    """Same as /api/dota2/search but sources VODs from Kick instead of Twitch."""
+    viewer = body.viewer_dota_id.strip()
+    streamer = body.streamer_dota_id.strip()
+    kick = body.streamer_kick_username.strip()
+
+    if not (viewer and streamer and kick):
+        raise HTTPException(status_code=400, detail="Both Dota 2 IDs and the streamer's Kick username are required")
+
+    try:
+        outcome = dota2_pipeline.run_kick_dota2_pipeline(viewer, streamer, kick)
+    except ValueError as exc:
+        raise _dota2_http_error(exc, "kick", kick, viewer)
+    except (requests.RequestException, CurlRequestException) as exc:
+        log.exception(f"Kick Dota 2 pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [Dota2Match(**r) for r in outcome["results"]]
+
+    return KickDota2SearchResponse(
+        viewer_dota_id=viewer,
+        streamer_dota_id=streamer,
+        streamer_kick_username=kick,
+        results=results,
+        total=len(results),
+        vods_scanned=outcome["vods_scanned"],
+    )
+
+
+@app.post("/api/dota2/youtube/search", response_model=YoutubeDota2SearchResponse)
+@limiter.limit("5/minute")
+def youtube_dota2_search(request: Request, body: YoutubeDota2SearchRequest):
+    """Same as /api/dota2/search but sources VODs from YouTube Live instead of Twitch."""
+    viewer = body.viewer_dota_id.strip()
+    streamer = body.streamer_dota_id.strip()
+    youtube = body.streamer_youtube_channel.strip()
+
+    if not (viewer and streamer and youtube):
+        raise HTTPException(status_code=400, detail="Both Dota 2 IDs and the streamer's YouTube channel are required")
+
+    try:
+        outcome = dota2_pipeline.run_youtube_dota2_pipeline(viewer, streamer, youtube)
+    except ValueError as exc:
+        raise _dota2_http_error(exc, "youtube", youtube, viewer)
+    except requests.RequestException as exc:
+        log.exception(f"YouTube Dota 2 pipeline upstream request failed: {exc}")
+        raise HTTPException(status_code=502, detail="Upstream API request failed")
+
+    results = [Dota2Match(**r) for r in outcome["results"]]
+
+    return YoutubeDota2SearchResponse(
+        viewer_dota_id=viewer,
+        streamer_dota_id=streamer,
         streamer_youtube_channel=youtube,
         results=results,
         total=len(results),

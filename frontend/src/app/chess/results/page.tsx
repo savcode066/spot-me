@@ -34,19 +34,24 @@ export default async function ChessResultsPage({
 
   if (apiError) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
-        <span className="font-label text-[11px] tracking-[0.2em] uppercase text-error mb-4">
-          Search Failed
-        </span>
-        <p className="font-headline text-2xl md:text-3xl text-on-surface max-w-lg mb-6">
-          {apiError}
-        </p>
-        <a
-          href="/?game=chess"
-          className="inline-flex items-center gap-2 px-6 py-3 font-label font-bold text-sm text-on-primary bg-primary-container"
-        >
-          Try Again
-        </a>
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-[560px] card-frame clip-18">
+          <div className="card-panel clip-17 p-10 text-center">
+            <div className="alert-wash" />
+            <span className="font-label text-[11px] tracking-[0.2em] uppercase text-alert">
+              Search Failed
+            </span>
+            <p className="font-headline text-xl md:text-2xl text-ink mt-4 mb-7">
+              {apiError}
+            </p>
+            <a
+              href="/?game=chess"
+              className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
+            >
+              Try Again
+            </a>
+          </div>
+        </div>
       </main>
     );
   }

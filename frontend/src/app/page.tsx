@@ -9,7 +9,8 @@ export default async function HomePage({
   searchParams: Promise<{ game?: string }>;
 }) {
   const { game } = await searchParams;
-  const initialGame: Game = game === "valorant" ? "valorant" : "chess";
+  const initialGame: Game =
+    game === "valorant" ? "valorant" : game === "dota2" ? "dota2" : "chess";
 
   return <GameLandingContent initialGame={initialGame} />;
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Header from "@/components/Header";
-import type { ChessMatch, ChessMatchupResponse, ChessPlatform } from "@/lib/api";
+import type { ChessPlatform, Dota2Match, Dota2MatchupResponse } from "@/lib/api";
 
 const PAGE_SIZE = 10;
 
@@ -44,25 +44,31 @@ function vodDeepLink(platform: ChessPlatform, videoId: string, seconds: number):
   }
 }
 
-const DRAW_RESULTS = new Set(["agreed", "repetition", "stalemate", "insufficient", "50move", "timevsinsufficient"]);
-
 // Result → the app's rarity-ladder color language, doubling as a CS2-style
 // significance rail on each row. Literal class strings (not built via
 // template interpolation) so Tailwind's JIT scanner can see them statically.
 function resultStyle(result: string): { label: string; text: string; rail: string } {
   if (result === "win") return { label: "WIN", text: "text-steel", rail: "bg-steel" };
-  if (DRAW_RESULTS.has(result)) return { label: "DRAW", text: "text-tier-routine", rail: "bg-tier-routine" };
-  return { label: "LOSS", text: "text-alert", rail: "bg-alert" };
+  if (result === "loss") return { label: "LOSS", text: "text-alert", rail: "bg-alert" };
+  return { label: "UNKNOWN", text: "text-tier-routine", rail: "bg-tier-routine" };
 }
 
 // ── empty state ──────────────────────────────────────────────────────────────
 // Not covered by the design handoff (flagged there as "not designed yet") —
 // extrapolated in the same card-shell visual language as landing/scanning.
 
-function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: string; vodsScanned: number }) {
+function NoMatchups({
+  viewer,
+  streamer,
+  vodsScanned,
+}: {
+  viewer: string;
+  streamer: string;
+  vodsScanned: number;
+}) {
   return (
     <div className="min-h-screen flex flex-col">
-      <Header backHref="/?game=chess" />
+      <Header backHref="/?game=dota2" />
 
       <main className="flex-grow flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[560px] card-frame clip-18">
@@ -73,15 +79,15 @@ function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: s
               No Matchups Found
             </div>
             <h1 className="font-headline font-bold text-2xl text-ink uppercase mb-3">
-              {user} hasn&apos;t played {streamer}.
+              {viewer} hasn&apos;t played with {streamer}.
             </h1>
             <p className="font-body text-sm text-ink-dim leading-relaxed mb-7">
-              We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced the full
-              chess.com archive for both accounts in that window — no games turned up.
+              We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced match
+              history for both accounts in that window — no shared games turned up.
             </p>
 
             <a
-              href="/?game=chess"
+              href="/?game=dota2"
               className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
             >
               New Search
@@ -95,7 +101,7 @@ function NoMatchups({ user, streamer, vodsScanned }: { user: string; streamer: s
 
 // ── match row ────────────────────────────────────────────────────────────────
 
-function MatchRow({ match, platform }: { match: ChessMatch; platform: ChessPlatform }) {
+function MatchRow({ match, platform }: { match: Dota2Match; platform: ChessPlatform }) {
   const style = resultStyle(match.result);
 
   return (
@@ -108,10 +114,10 @@ function MatchRow({ match, platform }: { match: ChessMatch; platform: ChessPlatf
 
       <div className="flex-1 min-w-0 order-1 md:order-none basis-full md:basis-auto">
         <div className="font-body font-semibold text-sm text-ink truncate">
-          vs {match.opponent} · {match.time_class}
+          {match.teammates ? "with" : "vs"} {match.streamer_hero}
         </div>
         <div className="font-mono text-xs text-ink-faint-alt mt-0.5">
-          {formatDate(match.played_at)} · {match.rated ? "rated" : "unrated"}
+          {formatDate(match.played_at)} · playing {match.viewer_hero} · {formatClock(match.duration)}
         </div>
       </div>
 
@@ -120,12 +126,12 @@ function MatchRow({ match, platform }: { match: ChessMatch; platform: ChessPlatf
       </div>
 
       <a
-        href={match.game_url}
+        href={match.match_url}
         target="_blank"
         rel="noopener noreferrer"
         className="shrink-0 font-mono text-[11px] text-ink-faint hover:text-ink transition-colors"
       >
-        View Game ↗
+        View Match ↗
       </a>
 
       <a
@@ -143,19 +149,19 @@ function MatchRow({ match, platform }: { match: ChessMatch; platform: ChessPlatf
 // ── main client shell ─────────────────────────────────────────────────────────
 
 interface Props {
-  user: string;
+  viewer: string;
   streamer: string;
   platform: ChessPlatform;
   channel: string;
-  initialData: ChessMatchupResponse;
+  initialData: Dota2MatchupResponse;
 }
 
-export default function ChessResultsContent({ user, streamer, platform, channel, initialData }: Props) {
+export default function ResultsContent({ viewer, streamer, platform, channel, initialData }: Props) {
   const [page, setPage] = useState(1);
   const { results, total, vods_scanned } = initialData;
 
   if (total === 0) {
-    return <NoMatchups user={user} streamer={streamer} vodsScanned={vods_scanned} />;
+    return <NoMatchups viewer={viewer} streamer={streamer} vodsScanned={vods_scanned} />;
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -164,16 +170,16 @@ export default function ChessResultsContent({ user, streamer, platform, channel,
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header backHref="/?game=chess" />
+      <Header backHref="/?game=dota2" />
 
       <main className="flex-grow w-full max-w-3xl mx-auto px-6 py-10 md:py-14">
         <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
           <div>
             <div className="font-mono text-[11px] tracking-[0.1em] text-ink-faint uppercase mb-1.5">
-              {user} vs
+              {viewer} vs
             </div>
             <h1 className="font-headline font-bold text-2xl md:text-[26px] text-ink uppercase">
-              {total} shared game{total === 1 ? "" : "s"}
+              {total} shared match{total === 1 ? "" : "es"}
             </h1>
             <p className="font-mono text-[11px] text-ink-faint mt-1">
               {vods_scanned} VOD{vods_scanned === 1 ? "" : "s"} scanned on {PLATFORM_LABEL[platform]}

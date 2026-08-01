@@ -17,7 +17,7 @@ const PLATFORM_LABEL: Record<ChessPlatform, string> = {
   youtube: "YouTube",
 };
 
-// Cosmetic progress animation — the real fetch happens on /valorant/results
+// Cosmetic progress animation — the real fetch happens on /dota2/results
 // after this redirects there, so duration/count here is flavor, not telemetry.
 const SCAN_DURATION_MS = 3000;
 
@@ -39,7 +39,7 @@ export default function ScanningContent({ viewer, streamer, platform, channel }:
       setProgress(100);
       await new Promise((r) => setTimeout(r, 400));
       const params = new URLSearchParams({ viewer, streamer, platform, channel });
-      router.replace(`/valorant/results?${params.toString()}`);
+      router.replace(`/dota2/results?${params.toString()}`);
     }, SCAN_DURATION_MS);
 
     return () => {
@@ -48,7 +48,7 @@ export default function ScanningContent({ viewer, streamer, platform, channel }:
     };
   }, [viewer, streamer, platform, channel, router]);
 
-  const matchesChecked = Math.round((progress / 100) * 1800);
+  const matchesChecked = Math.round((progress / 100) * 1500);
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6 md:p-10">

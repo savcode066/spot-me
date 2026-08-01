@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChessPlatform } from "@/lib/api";
 
-export type Game = "chess" | "valorant";
+export type Game = "chess" | "valorant" | "dota2";
 
 const GAMES: { value: Game; label: string }[] = [
   { value: "chess", label: "Chess.com" },
   { value: "valorant", label: "Valorant" },
+  { value: "dota2", label: "Dota 2" },
 ];
 
 const PLATFORMS: { value: ChessPlatform; label: string }[] = [
@@ -26,11 +27,18 @@ const COPY: Record<Game, { you: string; streamer: string; idPlaceholder?: string
     you: "Your Riot ID",
     streamer: "Streamer's Riot ID",
     // Riot IDs are Name#Tag — the backend rejects a bare username, so this
-    // is the one field that still needs a hint. Chess usernames have no
-    // such format requirement, so they stay placeholder-free. Team/clan
-    // tags (e.g. "T1", "TL") are often part of the literal Riot ID name
-    // itself, not just a cosmetic prefix, so callers need to include it.
+    // is the one field that still needs a hint. Team/clan tags (e.g. "T1",
+    // "TL") are often part of the literal Riot ID name itself, not just a
+    // cosmetic prefix, so callers need to include it.
     idPlaceholder: "e.g. T1 TenZ#2001 (w/ team tag)",
+  },
+  dota2: {
+    you: "Your Dota 2 Friend ID",
+    streamer: "Streamer's Dota 2 Friend ID",
+    // Dota 2 has no lookup-by-name API, so we take the Steam32 account ID
+    // directly — the same number shown as "Friend ID" in the client's
+    // profile/friends list, not the longer SteamID64.
+    idPlaceholder: "e.g. 105248644",
   },
 };
 
@@ -55,169 +63,161 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
     const ch = channel.trim();
     if (!u || !s || !ch) return;
 
-    if (game === "valorant") {
-      const params = new URLSearchParams({ viewer: u, streamer: s, platform, channel: ch });
-      router.push(`/valorant/scanning?${params.toString()}`);
+    if (game === "chess") {
+      const params = new URLSearchParams({ user: u, streamer: s, platform, channel: ch });
+      router.push(`/chess/scanning?${params.toString()}`);
       return;
     }
 
-    const params = new URLSearchParams({ user: u, streamer: s, platform, channel: ch });
-    router.push(`/chess/scanning?${params.toString()}`);
+    const params = new URLSearchParams({ viewer: u, streamer: s, platform, channel: ch });
+    router.push(`/${game}/scanning?${params.toString()}`);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="tactical-border bg-surface-container-low/95 p-8 md:p-12 shadow-2xl relative w-full">
-      <div className="scanline-sweep" />
+    <div className="w-full max-w-[560px] card-frame clip-18">
+      <div className="card-panel clip-17 p-8 md:p-10">
+        <div className="alert-wash" />
+        <div className="diamond-tick absolute top-4 left-4 w-[9px] h-[9px]" />
 
-      {/* Module header */}
-      <div className="flex justify-between items-end mb-10 border-b border-outline-variant pb-4">
-        <div>
-          <p className="font-label text-[10px] text-primary tracking-[0.2em] mb-1 uppercase">Match Finder</p>
-          <h1 className="font-headline text-2xl text-on-surface uppercase font-bold">Find My Clip</h1>
+        <div className="flex items-center gap-2.5 mb-6">
+          <div className="diamond-tick w-2.5 h-2.5 shrink-0" />
+          <span className="font-headline font-bold text-[15px] tracking-[0.22em] text-ink uppercase">
+            SpotMe
+          </span>
         </div>
-        <span className="material-symbols-outlined material-symbols-filled text-primary text-xl">radar</span>
-      </div>
 
-      <div className="space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Choose Game */}
-          <div className="relative">
-            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 flex items-center gap-1.5 tracking-wider">
-              Choose Game
-              {game === "valorant" && (
-                <span className="relative group/warn inline-flex">
-                  <span className="material-symbols-outlined material-symbols-filled text-[14px] leading-none text-[#ffba20] normal-case cursor-help">
-                    warning
-                  </span>
-                  <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/warn:block whitespace-nowrap bg-surface-container-high border border-outline-variant text-on-surface text-[10px] font-label normal-case tracking-normal px-2.5 py-1.5 z-20">
-                    Experimental — may not work as expected
-                  </span>
-                </span>
-              )}
+        <h1 className="font-headline font-bold text-3xl text-ink uppercase mb-2 leading-tight">
+          Find My Clip
+        </h1>
+        <p className="font-body text-sm text-ink-dim mb-7 leading-relaxed">
+          Enter your ID and a streamer&apos;s to find every match you played against them.
+        </p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Game */}
+          <div className="flex flex-col gap-1.5">
+            <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+              Game
             </label>
-            <div className="input-accent relative">
+            <div className="relative rounded-full bg-input-alt px-4 flex items-center gap-2.5">
+              <span className="w-[7px] h-[7px] rounded-full bg-alert shrink-0" />
               <select
                 value={game}
                 onChange={(e) => onGameChange(e.target.value as Game)}
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 pr-6 focus:ring-0 appearance-none cursor-pointer"
+                className="flex-1 bg-transparent border-none text-ink font-body font-semibold text-sm py-3 pr-5 focus:ring-0 focus:outline-none appearance-none cursor-pointer"
               >
                 {GAMES.map((g) => (
-                  <option key={g.value} value={g.value} className="bg-surface-container">
+                  <option key={g.value} value={g.value} className="bg-input-alt text-ink">
                     {g.label}
                   </option>
                 ))}
               </select>
-              <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">
-                arrow_drop_down
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none text-xs">
+                ⌄
               </span>
-              <div className="corner-notch" />
+            </div>
+            {game === "valorant" && (
+              <p className="font-label text-[10px] text-alert/80 uppercase tracking-wide mt-0.5">
+                ⚠ Experimental — may not always resolve a match
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Your ID */}
+            <div className="flex flex-col gap-1.5">
+              <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+                {c.you}
+              </label>
+              <div className="clip-8 bg-input px-3.5 py-3">
+                <input
+                  type="text"
+                  value={you}
+                  onChange={(e) => setYou(e.target.value)}
+                  placeholder={c.idPlaceholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={50}
+                  required
+                  className="w-full bg-transparent border-none text-ink font-mono text-sm focus:ring-0 focus:outline-none placeholder:text-ink-faint"
+                />
+              </div>
+            </div>
+
+            {/* Streamer's ID */}
+            <div className="flex flex-col gap-1.5">
+              <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+                {c.streamer}
+              </label>
+              <div className="clip-8 bg-input px-3.5 py-3">
+                <input
+                  type="text"
+                  value={streamer}
+                  onChange={(e) => setStreamer(e.target.value)}
+                  placeholder={c.idPlaceholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={50}
+                  required
+                  className="w-full bg-transparent border-none text-ink font-mono text-sm focus:ring-0 focus:outline-none placeholder:text-ink-faint"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Platform */}
-          <div className="relative">
-            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 block tracking-wider">
-              Platform
-            </label>
-            <div className="input-accent relative">
-              <select
-                value={platform}
-                onChange={(e) => setPlatform(e.target.value as ChessPlatform)}
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 pr-6 focus:ring-0 appearance-none cursor-pointer"
-              >
-                {PLATFORMS.map((p) => (
-                  <option key={p.value} value={p.value} className="bg-surface-container">
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-              <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">
-                arrow_drop_down
-              </span>
-              <div className="corner-notch" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* VOD platform */}
+            <div className="flex flex-col gap-1.5">
+              <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+                VOD Platform
+              </label>
+              <div className="relative rounded-full bg-twitch/[0.16] px-3.5 flex items-center gap-2">
+                <span className="w-[7px] h-[7px] rounded-full bg-twitch shrink-0" />
+                <select
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value as ChessPlatform)}
+                  className="flex-1 bg-transparent border-none text-twitch-ink font-body font-semibold text-sm py-3 pr-5 focus:ring-0 focus:outline-none appearance-none cursor-pointer"
+                >
+                  {PLATFORMS.map((p) => (
+                    <option key={p.value} value={p.value} className="bg-panel text-ink">
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-twitch-ink/60 pointer-events-none text-xs">
+                  ⌄
+                </span>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Your username */}
-        <div className="relative">
-          <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 block tracking-wider">
-            {c.you}
-          </label>
-          <div className="input-accent relative">
-            <input
-              type="text"
-              value={you}
-              onChange={(e) => setYou(e.target.value)}
-              placeholder={c.idPlaceholder}
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={50}
-              required
-              className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
-            />
-            <div className="corner-notch" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Streamer's username */}
-          <div className="relative">
-            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 block tracking-wider">
-              {c.streamer}
-            </label>
-            <div className="input-accent relative">
-              <input
-                type="text"
-                value={streamer}
-                onChange={(e) => setStreamer(e.target.value)}
-                placeholder={c.idPlaceholder}
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={50}
-                required
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0 placeholder:opacity-30"
-              />
-              <div className="corner-notch" />
+            {/* Channel */}
+            <div className="flex flex-col gap-1.5">
+              <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
+                Channel
+              </label>
+              <div className="clip-8 bg-input px-3.5 py-3">
+                <input
+                  type="text"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={50}
+                  required
+                  className="w-full bg-transparent border-none text-ink font-mono text-sm focus:ring-0 focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Channel name */}
-          <div className="relative">
-            <label className="font-label text-[11px] text-on-surface-variant uppercase mb-2 block tracking-wider">
-              Channel Name
-            </label>
-            <div className="input-accent relative">
-              <input
-                type="text"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={50}
-                required
-                className="w-full bg-transparent border-none text-on-surface font-label text-sm py-3 focus:ring-0"
-              />
-              <div className="corner-notch" />
-            </div>
-          </div>
-        </div>
-
-        {/* Action button */}
-        <div className="pt-2">
           <button
             type="submit"
-            className="w-full group relative overflow-hidden bg-primary-container py-5 px-8 flex justify-between items-center transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,184,0,0.4)] active:scale-[0.98]"
+            className="mt-2 w-full clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-[15px] tracking-[0.14em] uppercase py-4 hover:opacity-90 transition-opacity cursor-pointer"
           >
-            <span className="font-label text-on-primary font-black uppercase tracking-[0.25em] relative z-10">
-              Launch Search
-            </span>
-            <span className="material-symbols-outlined material-symbols-filled text-on-primary relative z-10">
-              send
-            </span>
+            Launch Search
           </button>
-        </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { searchValorantMatchup, type ChessPlatform, type ValorantMatchupResponse } from "@/lib/api";
+import { searchDota2Matchup, type ChessPlatform, type Dota2MatchupResponse } from "@/lib/api";
 import ResultsContent from "./ResultsContent";
 
 const VALID_PLATFORMS = new Set<ChessPlatform>(["twitch", "kick", "youtube"]);
@@ -14,18 +14,18 @@ export default async function ResultsPage({
 }) {
   const { viewer = "", streamer = "", platform = "", channel = "" } = await searchParams;
   if (!viewer.trim() || !streamer.trim() || !channel.trim() || !VALID_PLATFORMS.has(platform as ChessPlatform)) {
-    redirect("/?game=valorant");
+    redirect("/?game=dota2");
   }
   const validPlatform = platform as ChessPlatform;
 
-  let data: ValorantMatchupResponse = { results: [], total: 0, vods_scanned: 0 };
+  let data: Dota2MatchupResponse = { results: [], total: 0, vods_scanned: 0 };
   let apiError: string | null = null;
 
   try {
-    data = await searchValorantMatchup({
+    data = await searchDota2Matchup({
       platform: validPlatform,
-      viewerRiotId: viewer,
-      streamerRiotId: streamer,
+      viewerDotaId: viewer,
+      streamerDotaId: streamer,
       channel,
     });
   } catch (err) {
@@ -45,7 +45,7 @@ export default async function ResultsPage({
               {apiError}
             </p>
             <a
-              href="/?game=valorant"
+              href="/?game=dota2"
               className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
             >
               Try Again

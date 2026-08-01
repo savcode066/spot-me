@@ -220,3 +220,78 @@ export async function searchValorantMatchup({
 
   return res.json();
 }
+
+// ── Dota 2 matchup search ───────────────────────────────────────────────────
+// Same shape as the chess.com/Valorant searches above — one backend route
+// per VOD platform, dispatched here. Players are identified by their
+// Steam32 account ID ("Friend ID" in the Dota 2 client) rather than a name.
+
+export interface Dota2Match {
+  video_id: string;
+  video_name: string;
+  timestamp: number;
+  played_at: number;
+  duration: number;
+  result: string;
+  teammates: boolean;
+  viewer_hero: string;
+  streamer_hero: string;
+  match_url: string;
+}
+
+export interface Dota2MatchupResponse {
+  results: Dota2Match[];
+  total: number;
+  vods_scanned: number;
+}
+
+export interface Dota2SearchParams {
+  platform: ChessPlatform;
+  viewerDotaId: string;
+  streamerDotaId: string;
+  channel: string;
+}
+
+const DOTA2_ENDPOINT: Record<ChessPlatform, string> = {
+  twitch: "/api/dota2/search",
+  kick: "/api/dota2/kick/search",
+  youtube: "/api/dota2/youtube/search",
+};
+
+const DOTA2_CHANNEL_FIELD: Record<ChessPlatform, string> = {
+  twitch: "streamer_twitch_username",
+  kick: "streamer_kick_username",
+  youtube: "streamer_youtube_channel",
+};
+
+export async function searchDota2Matchup({
+  platform,
+  viewerDotaId,
+  streamerDotaId,
+  channel,
+}: Dota2SearchParams): Promise<Dota2MatchupResponse> {
+  const res = await fetch(`${apiBase()}${DOTA2_ENDPOINT[platform]}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Don't cache — matchup results depend on the streamer's live VOD list.
+    cache: "no-store",
+    body: JSON.stringify({
+      viewer_dota_id: viewerDotaId,
+      streamer_dota_id: streamerDotaId,
+      [DOTA2_CHANNEL_FIELD[platform]]: channel,
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = `Dota 2 search failed: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      // Response wasn't JSON — keep the generic message.
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}
