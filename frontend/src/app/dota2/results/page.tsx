@@ -36,17 +36,30 @@ export default async function ResultsPage({
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-[560px] card-frame clip-18">
-          <div className="card-panel clip-17 p-10 text-center">
-            <div className="alert-wash" />
-            <span className="font-label text-[11px] tracking-[0.2em] uppercase text-alert">
-              Search Failed
-            </span>
-            <p className="font-headline text-xl md:text-2xl text-ink mt-4 mb-7">
-              {apiError}
+          <div className="relative card-panel clip-17 p-10 text-left overflow-hidden">
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-alert" />
+
+            <div className="inline-flex items-center gap-2 rounded-full bg-alert/[0.16] px-3.5 py-1.5 mb-5">
+              <span className="w-1.5 h-1.5 rounded-full bg-alert" />
+              <span className="font-label text-[10px] tracking-[0.12em] text-alert uppercase">
+                Search Failed
+              </span>
+            </div>
+
+            <h1 className="font-headline font-bold text-xl text-ink uppercase mb-2">
+              We couldn&apos;t complete that search
+            </h1>
+            <p className="font-body text-sm text-ink-dim leading-relaxed mb-5">
+              Something went wrong reaching the Steam or VOD platform APIs. Details below.
             </p>
+
+            <div className="clip-8 bg-input px-3.5 py-3 mb-7">
+              <span className="font-mono text-xs text-ink-dim break-words">{apiError}</span>
+            </div>
+
             <a
               href="/?game=dota2"
-              className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
+              className="block text-center clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
             >
               Try Again
             </a>

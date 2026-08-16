@@ -57,6 +57,12 @@ function resultStyle(result: string): { label: string; text: string; rail: strin
 // Not covered by the design handoff (flagged there as "not designed yet") —
 // extrapolated in the same card-shell visual language as landing/scanning.
 
+const NO_MATCH_TIPS = [
+  "Double check the Friend ID — it's the Steam32 ID shown in the Dota 2 client, not your SteamID64.",
+  "The streamer may have played on a different account than their main.",
+  "Only VODs still on the channel can be searched — platforms eventually drop older ones.",
+];
+
 function NoMatchups({
   viewer,
   streamer,
@@ -72,23 +78,32 @@ function NoMatchups({
 
       <main className="flex-grow flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[560px] card-frame clip-18">
-          <div className="card-panel clip-17 p-10 text-center">
+          <div className="card-panel clip-17 p-10 text-left">
             <div className="alert-wash" />
 
-            <div className="font-label text-[11px] tracking-[0.2em] text-ink-faint uppercase mb-3">
-              No Matchups Found
+            <div className="flex items-center gap-3 mb-5">
+              <span className="w-[11px] h-[11px] bg-ink-faint rotate-45 shrink-0" />
+              <h1 className="font-headline font-bold text-2xl text-ink uppercase">
+                No shared matches
+              </h1>
             </div>
-            <h1 className="font-headline font-bold text-2xl text-ink uppercase mb-3">
-              {viewer} hasn&apos;t played with {streamer}.
-            </h1>
-            <p className="font-body text-sm text-ink-dim leading-relaxed mb-7">
-              We scanned {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} and cross-referenced match
-              history for both accounts in that window — no shared games turned up.
+            <p className="font-body text-sm text-ink-dim leading-relaxed mb-6">
+              We checked {vodsScanned} VOD{vodsScanned === 1 ? "" : "s"} in {streamer}&apos;s archive.{" "}
+              {viewer} isn&apos;t in any of them.
             </p>
+
+            <div className="flex flex-col gap-2 mb-7">
+              {NO_MATCH_TIPS.map((tip) => (
+                <div key={tip} className="flex items-start gap-3 clip-10 bg-input px-4 py-3">
+                  <span className="w-[7px] h-[7px] bg-ink-faint rotate-45 mt-1 shrink-0" />
+                  <span className="font-body text-sm text-ink-muted leading-relaxed">{tip}</span>
+                </div>
+              ))}
+            </div>
 
             <a
               href="/?game=dota2"
-              className="inline-block clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
+              className="block text-center clip-16 bg-gradient-to-r from-steel to-white text-ink-inverse font-headline font-bold text-sm uppercase tracking-[0.14em] px-8 py-3.5 hover:opacity-90 transition-opacity"
             >
               New Search
             </a>
