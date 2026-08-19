@@ -9,4 +9,11 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
+# Cloud Run injects its own $PORT; $WEB_CONCURRENCY controls uvicorn's
+# worker-process count within this one instance (default 2 — deliberately
+# modest, since every route is sync and thread-pool-bound rather than
+# asyncio-bound). The primary lever for absorbing a traffic burst is Cloud
+# Run's own instance autoscaling (--max-instances / --concurrency on the
+# service), not stacking workers inside one instance's fixed CPU/memory
+# allocation.
+CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port ${PORT:-8080} --workers ${WEB_CONCURRENCY:-2}"]

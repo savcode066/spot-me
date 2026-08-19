@@ -20,11 +20,12 @@ chess_pipeline.py/kick_pipeline.py via chess_common.py.
 
 Quota: the Data API v3's free tier is 10,000 units/day, resetting at
 Pacific midnight. Every call here costs 1 unit (channels.list,
-playlistItems.list, videos.list), tracked in-process against
-YOUTUBE_QUOTA_DAILY_LIMIT so we fail closed with a clear error instead of
-silently hammering the API once the budget's gone. This counter is
-best-effort: it resets on process restart and isn't shared across
-multiple server instances.
+playlistItems.list, videos.list), tracked against YOUTUBE_QUOTA_DAILY_LIMIT
+so we fail closed with a clear error instead of silently hammering the API
+once the budget's gone. Backed by rate_limit.DistributedCounter (Redis)
+when REDIS_URL is set, so the count is accurate across every server
+instance; falls back to an in-process counter (best-effort, resets on
+restart, not shared across instances) when Redis isn't configured.
 """
 
 import logging
@@ -35,6 +36,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import rate_limit
 from chess_common import (
     cached_vods,
     chess_user_exists,
@@ -53,6 +55,9 @@ _QUOTA_WARN_RATIO = 0.8
 _PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 _UNIT_COSTS = {"channels": 1, "playlistItems": 1, "videos": 1}
 
+_quota_counter = rate_limit.DistributedCounter(prefix="youtube_quota")
+
+# In-process fallback state, used only when REDIS_URL isn't configured.
 _quota_lock = threading.Lock()
 _quota_used = 0
 _quota_day = None
@@ -64,8 +69,17 @@ def _account_quota(endpoint: str) -> None:
     would push today's usage past YOUTUBE_QUOTA_DAILY_LIMIT."""
     global _quota_used, _quota_day, _quota_warned
     cost = _UNIT_COSTS[endpoint]
+    today = datetime.now(_PACIFIC_TZ).date()
+
+    if rate_limit.get_redis() is not None:
+        # DistributedCounter's own TTL (~25h) handles the daily reset —
+        # each day gets a fresh key, so no explicit day-rollover needed.
+        allowed = _quota_counter.try_increment(key=str(today), amount=cost, limit=YOUTUBE_QUOTA_DAILY_LIMIT)
+        if not allowed:
+            raise ValueError("youtube_quota_exceeded")
+        return
+
     with _quota_lock:
-        today = datetime.now(_PACIFIC_TZ).date()
         if _quota_day != today:
             _quota_day = today
             _quota_used = 0
@@ -83,6 +97,7 @@ def _account_quota(endpoint: str) -> None:
             )
 
 
+@rate_limit.with_retry(exceptions=(requests.RequestException,))
 def _youtube_get(endpoint: str, params: dict) -> dict:
     _account_quota(endpoint)
     resp = requests.get(

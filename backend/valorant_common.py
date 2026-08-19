@@ -19,9 +19,17 @@ from urllib.parse import quote
 
 import requests
 
+import rate_limit
+
 log = logging.getLogger(__name__)
 
 HENRIK_API_BASE = "https://api.henrikdev.xyz"
+
+# Shared across every process talking to the same Redis instance, so a
+# burst of concurrent Valorant searches collectively stays just under
+# HenrikDev's real 30/min shared-key limit instead of each instance
+# assuming it has the full 30/min to itself.
+_henrik_bucket = rate_limit.TokenBucket(key="upstream:henrikdev", rate_per_min=28, burst=5)
 
 MATCH_PAGE_SIZE = 10
 # HenrikDev's v4 by-name match-history endpoint hard-caps responses at 10
@@ -54,7 +62,13 @@ def _henrik_headers() -> dict:
     return {"Authorization": os.environ["VALORANT_API_KEY"].strip()}
 
 
+# Only retries connection errors and 5xx — deliberately excludes 429 so the
+# existing "stop early, use partial results" handling in
+# fetch_matches_for_window (below) still sees the real 429 on the first
+# occurrence instead of it being silently absorbed by a retry loop.
+@rate_limit.with_retry(exceptions=(requests.RequestException,), retryable_status=(500, 502, 503, 504))
 def _henrik_get(path: str, params: dict | None = None) -> requests.Response:
+    _henrik_bucket.acquire()
     return requests.get(
         f"{HENRIK_API_BASE}{path}",
         headers=_henrik_headers(),

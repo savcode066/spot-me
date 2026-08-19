@@ -2,7 +2,9 @@ import logging
 from datetime import datetime, timezone
 
 from curl_cffi import requests as creq
+from curl_cffi.requests.exceptions import RequestException as CurlRequestException
 
+import rate_limit
 from chess_common import (
     cached_vods,
     chess_user_exists,
@@ -16,14 +18,26 @@ log = logging.getLogger(__name__)
 
 KICK_API_BASE = "https://kick.com/api"
 
+# Kick's videos endpoint is undocumented and scraped (browser-impersonated
+# via curl_cffi), not an official API with a published rate limit — a
+# conservative cap here is a defensive measure against tripping Cloudflare
+# or getting the scraping IP flagged under a burst of concurrent searches.
+_kick_bucket = rate_limit.TokenBucket(key="upstream:kick", rate_per_min=30)
 
-@cached_vods("kick")
-def fetch_all_vods(channel: str) -> list[dict] | None:
-    resp = creq.get(
+
+@rate_limit.with_retry(exceptions=(CurlRequestException,))
+def _kick_get_videos(channel: str):
+    _kick_bucket.acquire()
+    return creq.get(
         f"{KICK_API_BASE}/v2/channels/{channel}/videos",
         impersonate="chrome",
         timeout=15,
     )
+
+
+@cached_vods("kick")
+def fetch_all_vods(channel: str) -> list[dict] | None:
+    resp = _kick_get_videos(channel)
     if resp.status_code == 404:
         log.info(f"Kick channel not found: {channel}")
         return None

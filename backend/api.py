@@ -52,8 +52,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 # App setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Rate limiter — keyed by client IP
-limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+# Rate limiter — keyed by client IP. Backed by Redis when REDIS_URL is set,
+# so the limit is shared across every process/instance instead of each one
+# silently getting its own independent budget (see backend/rate_limit.py).
+_REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+if _REDIS_URL:
+    limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"], storage_uri=_REDIS_URL)
+    log.info("Rate limiter using Redis-backed storage — shared across instances.")
+else:
+    limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+    log.warning("REDIS_URL not set — rate limiter is in-memory and per-process only. "
+                "Fine for a single instance; under multiple instances each one gets its own independent budget.")
 
 app = FastAPI(title="SpotMe API", version="1.0.0")
 app.state.limiter = limiter

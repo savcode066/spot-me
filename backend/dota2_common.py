@@ -22,9 +22,19 @@ import time
 
 import requests
 
+import rate_limit
+
 log = logging.getLogger(__name__)
 
 OPENDOTA_API_BASE = "https://api.opendota.com/api"
+
+# Shared across every process talking to the same Redis instance. A single
+# Dota 2 search can issue up to ~57 sequential OpenDota calls (see
+# MATCH_LIST_PAGE_LIMIT/MATCH_DETAIL_LIMIT below), so this is the most
+# important upstream throttle in the app — it keeps our aggregate outbound
+# rate just under OpenDota's ~60/min free-tier limit regardless of how many
+# concurrent searches are running.
+_opendota_bucket = rate_limit.TokenBucket(key="upstream:opendota", rate_per_min=55, burst=10)
 
 MATCH_LIST_PAGE_SIZE = 20
 # OpenDota's /players/{id}/matches endpoint has no hard per-call cap like
@@ -53,7 +63,14 @@ def parse_dota_id(dota_id: str) -> int:
     return int(cleaned)
 
 
+# Only retries connection errors and 5xx — deliberately excludes 429 so the
+# existing "stop early, use partial results" handling in
+# fetch_matches_for_window/find_matchup_games (below) still sees the real
+# 429 on the first occurrence instead of it being silently absorbed by a
+# retry loop.
+@rate_limit.with_retry(exceptions=(requests.RequestException,), retryable_status=(500, 502, 503, 504))
 def _opendota_get(path: str, params: dict | None = None) -> requests.Response:
+    _opendota_bucket.acquire()
     return requests.get(f"{OPENDOTA_API_BASE}{path}", params=params, timeout=10)
 
 

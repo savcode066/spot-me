@@ -24,6 +24,7 @@ from datetime import datetime
 
 import requests
 
+import rate_limit
 from chess_common import (
     cached_vods,
     chess_user_exists,
@@ -53,6 +54,7 @@ def _twitch_client_secret() -> str:
     return os.environ["TWITCH_CLIENT_SECRET"].strip()
 
 
+@rate_limit.with_retry(exceptions=(requests.RequestException,))
 def _get_twitch_token() -> str:
     resp = requests.post(TWITCH_TOKEN_URL, params={
         "client_id":     _twitch_client_id(),
@@ -70,6 +72,7 @@ def _twitch_headers(token: str) -> dict:
     }
 
 
+@rate_limit.with_retry(exceptions=(requests.RequestException,))
 def _get_user_id(channel: str, token: str) -> str | None:
     resp = requests.get(
         f"{TWITCH_API_BASE}/users",
@@ -91,6 +94,21 @@ def _parse_duration(s: str) -> int:
     return h * 3600 + mn * 60 + sec
 
 
+@rate_limit.with_retry(exceptions=(requests.RequestException,))
+def _fetch_video_page(user_id: str, token: str, cursor: str | None) -> dict:
+    params: dict = {"user_id": user_id, "type": "archive", "first": 100}
+    if cursor:
+        params["after"] = cursor
+    resp = requests.get(
+        f"{TWITCH_API_BASE}/videos",
+        headers=_twitch_headers(token),
+        params=params,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 @cached_vods("twitch")
 def fetch_all_vods(channel: str) -> list[dict] | None:
     """
@@ -110,17 +128,7 @@ def fetch_all_vods(channel: str) -> list[dict] | None:
     vods: list[dict] = []
     cursor = None
     while True:
-        params: dict = {"user_id": user_id, "type": "archive", "first": 100}
-        if cursor:
-            params["after"] = cursor
-        resp = requests.get(
-            f"{TWITCH_API_BASE}/videos",
-            headers=_twitch_headers(token),
-            params=params,
-            timeout=10,
-        )
-        resp.raise_for_status()
-        body = resp.json()
+        body = _fetch_video_page(user_id, token, cursor)
         for v in body.get("data", []):
             created_at = datetime.fromisoformat(
                 v["created_at"].replace("Z", "+00:00")

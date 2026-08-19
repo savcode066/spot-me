@@ -14,6 +14,7 @@ streamer within the TTL window don't re-spend YouTube quota or re-hit
 Kick's undocumented, Cloudflare-gated endpoint.
 """
 
+import json
 import logging
 import os
 import re
@@ -24,6 +25,8 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import requests
+
+import rate_limit
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +42,7 @@ ARCHIVE_FETCH_WORKERS = 4
 _ARCHIVE_MONTH_RE = re.compile(r"/(\d{4})/(\d{1,2})$")
 
 
+@rate_limit.with_retry(exceptions=(requests.RequestException,))
 def _chess_get(url: str) -> requests.Response:
     return requests.get(url, headers={"User-Agent": CHESS_API_USER_AGENT}, timeout=10)
 
@@ -120,6 +124,26 @@ _vod_cache: dict[tuple[str, str], tuple[float, list[dict] | None]] = {}
 # key: (platform, channel.lower()) -> (expires_at_monotonic, result)
 
 
+_MISSING_SENTINEL = "__missing__"  # distinguishes a real cache miss from a cached "channel not found" (None)
+
+
+def _redis_cache_get(cache_key: str) -> tuple[bool, list[dict] | None]:
+    """Returns (hit, value). `hit` is False on a real cache miss."""
+    client = rate_limit.get_redis()
+    raw = client.get(cache_key)
+    if raw is None:
+        return False, None
+    if raw == _MISSING_SENTINEL:
+        return True, None
+    return True, json.loads(raw)
+
+
+def _redis_cache_set(cache_key: str, value: list[dict] | None) -> None:
+    client = rate_limit.get_redis()
+    raw = _MISSING_SENTINEL if value is None else json.dumps(value)
+    client.set(cache_key, raw, ex=VOD_CACHE_TTL_SECONDS)
+
+
 def cached_vods(platform: str):
     """
     Decorator for a platform's fetch_all_vods(channel) -> list[dict] | None.
@@ -128,11 +152,35 @@ def cached_vods(platform: str):
     exception (network error, YouTube quota_exceeded, etc.) — those
     propagate so the next call retries for real instead of replaying a
     transient failure for the full TTL.
+
+    Backed by Redis (shared across every process) when REDIS_URL is set,
+    with single-flight dogpile protection so concurrent requests for the
+    same uncached channel — e.g. hundreds of viewers all asking about the
+    same shouted-out streamer — trigger one real upstream fetch instead of
+    one per request. Falls back to the original in-process dict+lock cache
+    (no dogpile protection, but correct for a single process) when Redis
+    isn't configured.
     """
     def decorator(fetch_fn):
         @wraps(fetch_fn)
         def wrapper(channel: str):
-            key = (platform, channel.lower())
+            channel_key = channel.lower()
+
+            if rate_limit.get_redis() is not None:
+                cache_key = f"vods:{platform}:{channel_key}"
+                hit, value = _redis_cache_get(cache_key)
+                if hit:
+                    return value
+
+                def compute_and_store():
+                    result = fetch_fn(channel)
+                    _redis_cache_set(cache_key, result)
+                    return result
+
+                return rate_limit.single_flight(f"vods:{platform}:{channel_key}", ttl=30, compute_fn=compute_and_store)
+
+            # In-process fallback — single instance only, no dogpile protection.
+            key = (platform, channel_key)
             now = time.monotonic()
             with _cache_lock:
                 entry = _vod_cache.get(key)

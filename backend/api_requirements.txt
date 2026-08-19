@@ -6,3 +6,4 @@ python-dotenv>=1.0.0
 requests
 slowapi>=0.1.9
 curl_cffi>=0.7.0
+redis[hiredis]>=5.0.0
