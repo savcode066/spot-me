@@ -4,9 +4,9 @@ import { useState } from "react";
 import GameSearchForm, { type Game } from "@/components/GameSearchForm";
 
 const GAME_PILLS: { name: string; color: string }[] = [
-  { name: "Chess.com", color: "bg-tier-routine" },
-  { name: "Valorant", color: "bg-alert" },
-  { name: "Dota 2", color: "bg-tier-clutch" },
+  { name: "Chess.com", color: "bg-[#81B64C]" },
+  { name: "Valorant", color: "bg-[#FF4655]" },
+  { name: "Dota 2", color: "bg-[#C23C2A]" },
 ];
 
 const STEPS: { n: string; color: string; title: string; body: string }[] = [
@@ -82,13 +82,6 @@ function Hero({ game, onGameChange }: { game: Game; onGameChange: (g: Game) => v
     <div className="w-full max-w-[1320px] mx-auto px-6 md:px-12 py-12 md:py-20">
       <div className="flex gap-10 lg:gap-14 items-center flex-wrap lg:flex-nowrap">
         <div className="flex-1 min-w-[320px]">
-          <div className="rounded-full bg-twitch/[0.16] px-3.5 py-1.5 inline-flex items-center gap-2 mb-5">
-            <span className="w-1.5 h-1.5 rounded-full bg-alert" />
-            <span className="font-label text-[11px] tracking-[0.08em] text-twitch-ink uppercase">
-              Live search across 3 games
-            </span>
-          </div>
-
           <h1 className="font-headline font-bold text-4xl md:text-[52px] leading-[1.05] text-ink uppercase mb-5">
             Find My Clip
           </h1>
@@ -152,12 +145,9 @@ function SampleResults() {
         <div className="font-label text-[11px] tracking-[0.2em] text-ink-faint uppercase mb-2.5">
           Sample Results
         </div>
-        <h2 className="font-headline font-bold text-2xl md:text-[32px] text-ink uppercase mb-3">
+        <h2 className="font-headline font-bold text-2xl md:text-[32px] text-ink uppercase">
           Every shared match, ready to watch
         </h2>
-        <p className="font-body text-sm md:text-base text-ink-soft">
-          Color-coded by how close the match was — one click drops you into the VOD at that second.
-        </p>
       </div>
 
       <div className="max-w-3xl mx-auto card-frame clip-18">

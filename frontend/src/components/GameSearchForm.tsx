@@ -3,19 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChessPlatform } from "@/lib/api";
+import Dropdown, { type DropdownOption } from "./Dropdown";
 
 export type Game = "chess" | "valorant" | "dota2";
 
-const GAMES: { value: Game; label: string }[] = [
-  { value: "chess", label: "Chess.com" },
-  { value: "valorant", label: "Valorant" },
-  { value: "dota2", label: "Dota 2" },
+// Dot color is each game/platform's real brand color (or closest usable
+// shade). These feed Dropdown as data, not Tailwind classes, since a
+// per-selection color can't be a static class name.
+const GAME_OPTIONS: DropdownOption[] = [
+  { value: "chess", label: "Chess.com", color: "#81B64C" },
+  { value: "valorant", label: "Valorant", color: "#FF4655" },
+  { value: "dota2", label: "Dota 2", color: "#C23C2A" },
 ];
 
-const PLATFORMS: { value: ChessPlatform; label: string }[] = [
-  { value: "twitch", label: "Twitch" },
-  { value: "kick", label: "Kick" },
-  { value: "youtube", label: "YouTube" },
+const PLATFORM_OPTIONS: DropdownOption[] = [
+  { value: "twitch", label: "Twitch", color: "#9146FF", textColor: "#c9a8ff", bgColor: "rgba(145,70,255,.16)" },
+  { value: "kick", label: "Kick", color: "#53FC18", textColor: "#a8f58b", bgColor: "rgba(83,252,24,.13)" },
+  { value: "youtube", label: "YouTube", color: "#FF0033", textColor: "#ff9aa8", bgColor: "rgba(255,0,51,.14)" },
 ];
 
 const COPY: Record<Game, { you: string; streamer: string; idPlaceholder?: string }> = {
@@ -52,6 +56,7 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
   const [streamer, setStreamer] = useState("");
   const [platform, setPlatform] = useState<ChessPlatform>("twitch");
   const [channel, setChannel] = useState("");
+  const [openDropdown, setOpenDropdown] = useState<"game" | "platform" | null>(null);
   const router = useRouter();
 
   const c = COPY[game];
@@ -99,23 +104,15 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
             <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
               Game
             </label>
-            <div className="relative rounded-full bg-input-alt px-4 flex items-center gap-2.5">
-              <span className="w-[7px] h-[7px] rounded-full bg-alert shrink-0" />
-              <select
-                value={game}
-                onChange={(e) => onGameChange(e.target.value as Game)}
-                className="flex-1 bg-transparent border-none text-ink font-body font-semibold text-sm py-3 pr-5 focus:ring-0 focus:outline-none appearance-none cursor-pointer"
-              >
-                {GAMES.map((g) => (
-                  <option key={g.value} value={g.value} className="bg-input-alt text-ink">
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none text-xs">
-                ⌄
-              </span>
-            </div>
+            <Dropdown
+              ariaLabel="Select game"
+              options={GAME_OPTIONS}
+              value={game}
+              onChange={(v) => onGameChange(v as Game)}
+              open={openDropdown === "game"}
+              onToggle={() => setOpenDropdown((d) => (d === "game" ? null : "game"))}
+              onClose={() => setOpenDropdown(null)}
+            />
             {game === "valorant" && (
               <p className="font-label text-[10px] text-alert/80 uppercase tracking-wide mt-0.5">
                 ⚠ Experimental — may not always resolve a match
@@ -171,23 +168,18 @@ export default function GameSearchForm({ game, onGameChange }: GameSearchFormPro
               <label className="font-label text-[10px] tracking-[0.12em] text-ink-muted uppercase">
                 VOD Platform
               </label>
-              <div className="relative rounded-full bg-twitch/[0.16] px-3.5 flex items-center gap-2">
-                <span className="w-[7px] h-[7px] rounded-full bg-twitch shrink-0" />
-                <select
-                  value={platform}
-                  onChange={(e) => setPlatform(e.target.value as ChessPlatform)}
-                  className="flex-1 bg-transparent border-none text-twitch-ink font-body font-semibold text-sm py-3 pr-5 focus:ring-0 focus:outline-none appearance-none cursor-pointer"
-                >
-                  {PLATFORMS.map((p) => (
-                    <option key={p.value} value={p.value} className="bg-panel text-ink">
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-twitch-ink/60 pointer-events-none text-xs">
-                  ⌄
-                </span>
-              </div>
+              <Dropdown
+                ariaLabel="Select VOD platform"
+                options={PLATFORM_OPTIONS}
+                value={platform}
+                onChange={(v) => setPlatform(v as ChessPlatform)}
+                open={openDropdown === "platform"}
+                onToggle={() => setOpenDropdown((d) => (d === "platform" ? null : "platform"))}
+                onClose={() => setOpenDropdown(null)}
+                variant="tinted"
+                direction="up"
+                triggerClassName="px-3.5 py-[11px]"
+              />
             </div>
 
             {/* Channel */}
