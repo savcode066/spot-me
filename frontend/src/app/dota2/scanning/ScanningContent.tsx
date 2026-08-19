@@ -57,7 +57,7 @@ export default function ScanningContent({ viewer, streamer, platform, channel }:
           <div className="alert-wash" />
 
           <div className="inline-flex items-center gap-2 rounded-full bg-twitch/[0.16] px-3.5 py-1.5 mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-alert" />
+            <span className="w-1.5 h-1.5 rounded-full bg-dota" />
             <span className="font-label text-[11px] tracking-[0.08em] text-twitch-ink uppercase">
               Scanning
             </span>

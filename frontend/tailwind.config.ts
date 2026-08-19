@@ -35,6 +35,7 @@ const config: Config = {
         "discord":         "#5865F2",
         "discord-ink":     "#b8c0ff",
         "alert":           "#ff4655",
+        "dota":            "#C23C2A",
         "tier-routine":    "#4b7bff",
         "tier-close":      "#9d5cff",
         "tier-clutch":     "#ff4fa3",

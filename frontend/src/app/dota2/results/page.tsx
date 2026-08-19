@@ -37,11 +37,11 @@ export default async function ResultsPage({
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="w-full max-w-[560px] card-frame clip-18">
           <div className="relative card-panel clip-17 p-10 text-left overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-alert" />
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-dota" />
 
-            <div className="inline-flex items-center gap-2 rounded-full bg-alert/[0.16] px-3.5 py-1.5 mb-5">
-              <span className="w-1.5 h-1.5 rounded-full bg-alert" />
-              <span className="font-label text-[10px] tracking-[0.12em] text-alert uppercase">
+            <div className="inline-flex items-center gap-2 rounded-full bg-dota/[0.16] px-3.5 py-1.5 mb-5">
+              <span className="w-1.5 h-1.5 rounded-full bg-dota" />
+              <span className="font-label text-[10px] tracking-[0.12em] text-dota uppercase">
                 Search Failed
               </span>
             </div>
