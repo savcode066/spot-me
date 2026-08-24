@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://spotme.gg"),
   title: "SpotMe | Find Yourself in Their VODs",
   description:
     "Search any streamer's VOD library and find the exact clip and timestamp of when you played against them.",

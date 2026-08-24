@@ -47,6 +47,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // The dedicated per-game landing pages were folded into the unified search
+  // form on "/". A permanent (308) redirect here — rather than an in-page
+  // redirect() — tells search engines to consolidate ranking signal onto the
+  // canonical "/" URL instead of indexing these as separate pages.
+  async redirects() {
+    return [
+      { source: "/chess", destination: "/?game=chess", permanent: true },
+      { source: "/dota2", destination: "/?game=dota2", permanent: true },
+      { source: "/valorant", destination: "/?game=valorant", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
